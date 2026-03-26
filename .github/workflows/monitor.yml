@@ -2,17 +2,21 @@ name: Value Bet Monitor
 
 on:
   schedule:
+    # Monitor principal — de 30 em 30 minutos
     - cron: '0,30 * * * *'
+    # Report semanal — todas as terças-feiras às 08:00 UTC
+    - cron: '0 8 * * 2'
   workflow_dispatch:
     inputs:
-      test_mode:
-        description: 'Correr em modo teste'
+      mode:
+        description: 'Modo de execução'
         required: false
-        default: 'false'
+        default: 'normal'
         type: choice
         options:
-          - 'false'
-          - 'true'
+          - 'normal'
+          - 'test'
+          - 'report'
 
 jobs:
   monitor:
@@ -32,21 +36,36 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
 
+      - name: Restaurar cache de picks
+        uses: actions/cache@v4
+        with:
+          path: |
+            sent_alerts.json
+            picks_log.json
+          key: monitor-cache-${{ github.run_number }}
+          restore-keys: |
+            monitor-cache-
+
       - name: Correr monitor
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
-          if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+          MODE="${{ github.event.inputs.mode }}"
+          if [ "$MODE" = "test" ]; then
             python monitor.py --test
+          elif [ "$MODE" = "report" ]; then
+            python monitor.py --report
           else
             python monitor.py
           fi
 
-      - name: Guardar cache de alertas
+      - name: Guardar cache
         uses: actions/cache@v4
         with:
-          path: sent_alerts.json
-          key: alerts-cache-${{ github.run_number }}
-          restore-keys: |
-            alerts-cache-
+          path: |
+            sent_alerts.json
+            picks_log.json
+          key: monitor-cache-${{ github.run_number }}

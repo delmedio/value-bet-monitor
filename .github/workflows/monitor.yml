@@ -2,31 +2,30 @@ name: Value Bet Monitor
 
 on:
   schedule:
-    # De hora a hora
     - cron: '0 * * * *'
-    # Report semanal — terças às 08:00 UTC
-    - cron: '0 8 * * 2'
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Modo'
+        description: 'Modo de execução'
         required: false
         default: 'normal'
         type: choice
         options:
-          - normal
-          - test
-          - report
+          - 'normal'
+          - 'test'
+          - 'report'
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 55
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout código
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -34,14 +33,18 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
 
-      - name: Restaurar cache
+      - name: Instalar Playwright
+        run: playwright install chromium --with-deps
+
+      - name: Restaurar cache de picks
         uses: actions/cache@v4
         with:
           path: |
             sent_alerts.json
             picks_log.json
-          key: vbm-cache-${{ github.run_number }}
-          restore-keys: vbm-cache-
+          key: monitor-cache-${{ github.run_number }}
+          restore-keys: |
+            monitor-cache-
 
       - name: Correr monitor
         env:
@@ -49,13 +52,14 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: |
           MODE="${{ github.event.inputs.mode }}"
           if [ "$MODE" = "test" ]; then
             python monitor.py --test
           elif [ "$MODE" = "report" ]; then
             python monitor.py --report
+          elif [ "$MODE" = "export" ]; then
+            python monitor.py --export
           else
             python monitor.py
           fi
@@ -66,4 +70,4 @@ jobs:
           path: |
             sent_alerts.json
             picks_log.json
-          key: vbm-cache-${{ github.run_number }}
+          key: monitor-cache-${{ github.run_number }}

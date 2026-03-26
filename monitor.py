@@ -49,7 +49,6 @@ def analyse_game(game: GameOdds) -> list[dict]:
     # Match Odds 1X2
     for odd, market, selection in [
         (game.odd_1, "Match Odds", game.home),
-        (game.odd_x, "Match Odds", "Empate"),
         (game.odd_2, "Match Odds", game.away),
     ]:
         if odd:

@@ -33,9 +33,6 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
 
-      - name: Instalar Playwright
-        run: playwright install chromium --with-deps
-
       - name: Restaurar cache de picks
         uses: actions/cache@v4
         with:
@@ -71,3 +68,4 @@ jobs:
             sent_alerts.json
             picks_log.json
           key: monitor-cache-${{ github.run_number }}
+

@@ -1,13 +1,11 @@
 """
 scraper_oddsportal.py — Scraping do OddsPortal com Playwright
-Busca odds de abertura da Bet365 + linhas alternativas para todas as ligas
+Versão com diagnóstico melhorado
 """
 
 import asyncio
 import logging
-import json
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeout
 
@@ -76,14 +74,6 @@ class GameOdds:
     bookmaker: str = "Bet365"
 
 
-def parse_odd(text: str) -> float | None:
-    try:
-        val = float(str(text).strip().replace(",", "."))
-        return val if 1.01 < val < 50 else None
-    except (ValueError, AttributeError):
-        return None
-
-
 def parse_kickoff(text: str) -> tuple[str, float]:
     try:
         ts = datetime.now(timezone.utc).timestamp() + 86400 * 3
@@ -92,50 +82,100 @@ def parse_kickoff(text: str) -> tuple[str, float]:
         return text, datetime.now(timezone.utc).timestamp() + 86400
 
 
-async def scrape_league_page(page: Page, league_name: str, url: str) -> list[GameOdds]:
+async def scrape_league_page(page: Page, league_name: str, url: str, debug_first: bool = False) -> list[GameOdds]:
     games = []
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(3000)
+        await page.goto(url, wait_until="networkidle", timeout=45000)
+        await page.wait_for_timeout(4000)
 
+        # Aceitar cookies
         try:
-            cookie_btn = page.locator("button:has-text('Accept'), button:has-text('I Accept')")
-            if await cookie_btn.count() > 0:
-                await cookie_btn.first.click()
-                await page.wait_for_timeout(1000)
+            for selector in ["button:has-text('Accept')", "button:has-text('I Accept')", 
+                           "button:has-text('ACCEPT')", "#onetrust-accept-btn-handler"]:
+                btn = page.locator(selector)
+                if await btn.count() > 0:
+                    await btn.first.click()
+                    await page.wait_for_timeout(1000)
+                    break
         except Exception:
             pass
 
-        try:
-            await page.wait_for_selector("[class*='eventRow'], [class*='event-row']", timeout=15000)
-        except Exception:
-            log.warning(f"{league_name}: sem jogos encontrados")
-            return games
+        # Debug: imprime HTML da primeira liga para diagnóstico
+        if debug_first:
+            html = await page.content()
+            log.info(f"=== DEBUG HTML (primeiros 2000 chars) ===")
+            log.info(html[:2000])
+            log.info(f"=== FIM DEBUG ===")
 
+            # Tenta encontrar qualquer link com o padrão de jogo
+            links = await page.evaluate("""
+                () => {
+                    const all_links = Array.from(document.querySelectorAll('a[href]'))
+                        .map(a => ({href: a.href, text: a.textContent.trim().substring(0, 50)}))
+                        .filter(l => l.href.includes('/football/') && l.text.length > 3);
+                    return all_links.slice(0, 20);
+                }
+            """)
+            log.info(f"Links de futebol encontrados: {links}")
+
+        # Tenta múltiplos selectores para encontrar jogos
+        selectors_to_try = [
+            "a[href*='/football/'][href*='/']:not([href$='/football/'])",
+            "[class*='eventRow']",
+            "[class*='event-row']", 
+            "tr[class*='deactivate']",
+            "[data-testid*='event']",
+            "div[class*='border-black-borders']",
+        ]
+
+        rows_data = []
+
+        # Método 1: procura links de jogos directamente
         rows_data = await page.evaluate("""
             () => {
                 const results = [];
-                const rows = document.querySelectorAll('[class*="eventRow"], [class*="event-row"], tr[class*="deactivate"]');
-                rows.forEach(row => {
-                    try {
-                        const nameEl = row.querySelector('a[href*="/football/"]');
-                        if (!nameEl) return;
-                        const name = nameEl.textContent.trim();
-                        const url = nameEl.href;
-                        const oddEls = row.querySelectorAll('[class*="odds"] p, [class*="odds"] span, td p');
-                        const odds = [];
-                        oddEls.forEach(el => {
-                            const val = parseFloat(el.textContent.trim().replace(',', '.'));
-                            if (!isNaN(val) && val > 1.01 && val < 50) odds.push(val);
-                        });
-                        const timeEl = row.querySelector('[class*="time"], [class*="date"], t-md');
-                        const kickoff = timeEl ? timeEl.textContent.trim() : '';
-                        if (name && name.includes(' - ')) results.push({ name, url, odds, kickoff });
-                    } catch(e) {}
+                const seen = new Set();
+                
+                // Procura todos os links que parecem ser de jogos
+                const anchors = document.querySelectorAll('a[href]');
+                anchors.forEach(a => {
+                    const href = a.href || '';
+                    const text = a.textContent.trim();
+                    
+                    // URL de jogo tem formato /football/country/league/game/
+                    const parts = href.split('/').filter(p => p.length > 0);
+                    if (parts.length >= 6 && href.includes('/football/') && !seen.has(href)) {
+                        // Verifica se o texto parece nome de jogo (tem hífen)
+                        if (text.includes(' - ') && text.length > 5 && text.length < 100) {
+                            seen.add(href);
+                            
+                            // Procura odds próximas a este elemento
+                            const row = a.closest('tr, div[class*="row"], div[class*="event"]') || a.parentElement;
+                            const odds = [];
+                            if (row) {
+                                const allText = row.querySelectorAll('p, span, td');
+                                allText.forEach(el => {
+                                    const val = parseFloat(el.textContent.trim().replace(',', '.'));
+                                    if (!isNaN(val) && val > 1.01 && val < 30) odds.push(val);
+                                });
+                            }
+                            
+                            results.push({
+                                name: text,
+                                url: href,
+                                odds: odds.slice(0, 6),
+                                kickoff: ''
+                            });
+                        }
+                    }
                 });
-                return results;
+                return results.slice(0, 50);
             }
         """)
+
+        if not rows_data:
+            log.warning(f"{league_name}: sem jogos encontrados")
+            return games
 
         for row in rows_data:
             try:
@@ -144,12 +184,13 @@ async def scrape_league_page(page: Page, league_name: str, url: str) -> list[Gam
                 if len(parts) < 2:
                     continue
                 home = parts[0].strip()
-                away = parts[1].strip()
+                away = " - ".join(parts[1:]).strip()
                 game_name = f"{home} vs {away}"
                 game_url = row.get("url", url)
                 kickoff_str = row.get("kickoff", "TBD")
                 kickoff_str_fmt, kickoff_ts = parse_kickoff(kickoff_str)
                 odds = row.get("odds", [])
+
                 game = GameOdds(
                     game=game_name, home=home, away=away,
                     league=league_name, kickoff=kickoff_str_fmt,
@@ -177,29 +218,43 @@ async def scrape_all_leagues_async() -> list[GameOdds]:
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox",
-                  "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-web-security",
+            ]
         )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
+            viewport={"width": 1280, "height": 900},
             locale="en-US",
+            timezone_id="Europe/London",
         )
-        await context.route("**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}",
+        # Só bloqueia imagens, não CSS (o CSS pode ser necessário para o JS)
+        await context.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2}",
                           lambda route: route.abort())
+
         page = await context.new_page()
+
+        # Primeira liga com debug activado
+        first = True
         for league_name, url in LEAGUE_URLS.items():
             try:
-                games = await scrape_league_page(page, league_name, url)
+                games = await scrape_league_page(page, league_name, url, debug_first=first)
                 all_games.extend(games)
+                first = False
                 await asyncio.sleep(2)
             except Exception as e:
                 log.error(f"Erro em {league_name}: {e}")
+                first = False
+
         await browser.close()
+
     log.info(f"Total: {len(all_games)} jogos em {len(LEAGUE_URLS)} ligas")
     return all_games
 
 
 def scrape_all_leagues() -> list[GameOdds]:
     return asyncio.run(scrape_all_leagues_async())
-

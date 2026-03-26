@@ -2,10 +2,7 @@ name: Value Bet Monitor
 
 on:
   schedule:
-    # Monitor principal — de 30 em 30 minutos
-    - cron: '0,30 * * * *'
-    # Report semanal — todas as terças-feiras às 08:00 UTC
-    - cron: '0 8 * * 2'
+    - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -36,6 +33,9 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
 
+      - name: Instalar Playwright
+        run: playwright install chromium --with-deps
+
       - name: Restaurar cache de picks
         uses: actions/cache@v4
         with:
@@ -52,7 +52,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: |
           MODE="${{ github.event.inputs.mode }}"
           if [ "$MODE" = "test" ]; then

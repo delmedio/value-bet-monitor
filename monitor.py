@@ -13,7 +13,7 @@ from pathlib import Path
 
 from model import is_value_bet
 from alert import send_message, format_value_bet_alert, format_scan_summary, send_test_message
-from scraper_oddsapi import scrape_all_leagues, GameOdds
+from scraper_oddsportal import scrape_all_leagues, GameOdds
 from tracker import save_pick, track_pending_picks, make_pick_id, Pick
 
 logging.basicConfig(

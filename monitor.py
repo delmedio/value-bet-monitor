@@ -2,6 +2,7 @@
 monitor.py — Script principal do Value Bet Monitor
 Corre de 30 em 30 minutos via GitHub Actions
 Detecta value bets em 38 ligas e envia alertas Telegram
+Guarda picks e faz tracking de CLV real via BetInAsia (OddsPortal)
 """
 
 import os
@@ -183,3 +184,4 @@ if __name__ == "__main__":
     import sys
     test_mode = "--test" in sys.argv
     run_monitor(test_mode=test_mode)
+    

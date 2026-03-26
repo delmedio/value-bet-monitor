@@ -1,30 +1,18 @@
 """
-scraper_oddsportal.py — Scraping de odds do OddsPortal
-Busca jogos novos nas ligas configuradas e odds de abertura da Bet365
+scraper_oddsportal.py — Scraping do OddsPortal com Playwright
+Busca odds de abertura da Bet365 + linhas alternativas para todas as ligas
 """
 
-import time
-import random
+import asyncio
 import logging
-import requests
-from bs4 import BeautifulSoup
-from dataclasses import dataclass
+import json
+import re
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeout
 
 log = logging.getLogger(__name__)
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Referer": "https://www.oddsportal.com/",
-}
-
-# Mapeamento liga → URL OddsPortal
 LEAGUE_URLS = {
     "Liga Portugal 1":      "https://www.oddsportal.com/football/portugal/primeira-liga/",
     "Liga Portugal 2":      "https://www.oddsportal.com/football/portugal/segunda-liga/",
@@ -74,127 +62,144 @@ class GameOdds:
     away: str
     league: str
     kickoff: str
-    kickoff_dt: datetime
+    kickoff_ts: float
     url: str
     odd_1: float | None = None
     odd_x: float | None = None
     odd_2: float | None = None
+    ou_line: float | None = None
+    ou_over: float | None = None
+    ou_under: float | None = None
+    ah_line: float | None = None
+    ah_home: float | None = None
+    ah_away: float | None = None
     bookmaker: str = "Bet365"
 
 
-def fetch_page(url: str, session: requests.Session) -> BeautifulSoup | None:
-    """Faz fetch de uma página com retry."""
-    for attempt in range(3):
-        try:
-            time.sleep(random.uniform(1.5, 3.0))
-            r = session.get(url, headers=HEADERS, timeout=20)
-            if r.status_code == 200:
-                return BeautifulSoup(r.text, "html.parser")
-            elif r.status_code == 429:
-                log.warning(f"Rate limited em {url}, aguardando...")
-                time.sleep(10)
-            else:
-                log.warning(f"Status {r.status_code} em {url}")
-        except Exception as e:
-            log.warning(f"Tentativa {attempt+1} falhou para {url}: {e}")
-            time.sleep(5)
-    return None
-
-
 def parse_odd(text: str) -> float | None:
-    """Converte string de odd para float."""
     try:
-        clean = text.strip().replace(",", ".")
-        val = float(clean)
+        val = float(str(text).strip().replace(",", "."))
         return val if 1.01 < val < 50 else None
     except (ValueError, AttributeError):
         return None
 
 
-def scrape_league(league_name: str, url: str, session: requests.Session) -> list[GameOdds]:
-    """Faz scraping de uma liga no OddsPortal."""
-    games = []
-    soup = fetch_page(url, session)
-    if not soup:
-        return games
-
-    # OddsPortal usa estrutura de tabela com rows de jogos
-    # Cada jogo tem: data, equipas, odds 1X2
+def parse_kickoff(text: str) -> tuple[str, float]:
     try:
-        rows = soup.select("div.eventRow, tr.deactivate, div[class*='eventRow']")
-        if not rows:
-            # Tenta estrutura alternativa
-            rows = soup.select("[class*='border-black-borders']")
+        ts = datetime.now(timezone.utc).timestamp() + 86400 * 3
+        return text.strip(), ts
+    except Exception:
+        return text, datetime.now(timezone.utc).timestamp() + 86400
 
-        for row in rows:
+
+async def scrape_league_page(page: Page, league_name: str, url: str) -> list[GameOdds]:
+    games = []
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_timeout(3000)
+
+        try:
+            cookie_btn = page.locator("button:has-text('Accept'), button:has-text('I Accept')")
+            if await cookie_btn.count() > 0:
+                await cookie_btn.first.click()
+                await page.wait_for_timeout(1000)
+        except Exception:
+            pass
+
+        try:
+            await page.wait_for_selector("[class*='eventRow'], [class*='event-row']", timeout=15000)
+        except Exception:
+            log.warning(f"{league_name}: sem jogos encontrados")
+            return games
+
+        rows_data = await page.evaluate("""
+            () => {
+                const results = [];
+                const rows = document.querySelectorAll('[class*="eventRow"], [class*="event-row"], tr[class*="deactivate"]');
+                rows.forEach(row => {
+                    try {
+                        const nameEl = row.querySelector('a[href*="/football/"]');
+                        if (!nameEl) return;
+                        const name = nameEl.textContent.trim();
+                        const url = nameEl.href;
+                        const oddEls = row.querySelectorAll('[class*="odds"] p, [class*="odds"] span, td p');
+                        const odds = [];
+                        oddEls.forEach(el => {
+                            const val = parseFloat(el.textContent.trim().replace(',', '.'));
+                            if (!isNaN(val) && val > 1.01 && val < 50) odds.push(val);
+                        });
+                        const timeEl = row.querySelector('[class*="time"], [class*="date"], t-md');
+                        const kickoff = timeEl ? timeEl.textContent.trim() : '';
+                        if (name && name.includes(' - ')) results.push({ name, url, odds, kickoff });
+                    } catch(e) {}
+                });
+                return results;
+            }
+        """)
+
+        for row in rows_data:
             try:
-                # Nome do jogo
-                participants = row.select("a[class*='participant'], div[class*='participant']")
-                if len(participants) >= 2:
-                    home = participants[0].get_text(strip=True)
-                    away = participants[1].get_text(strip=True)
-                elif participants:
-                    name_parts = participants[0].get_text(strip=True).split(" - ")
-                    if len(name_parts) == 2:
-                        home, away = name_parts
-                    else:
-                        continue
-                else:
+                name = row.get("name", "")
+                parts = name.split(" - ")
+                if len(parts) < 2:
                     continue
-
+                home = parts[0].strip()
+                away = parts[1].strip()
                 game_name = f"{home} vs {away}"
-
-                # Link do jogo
-                link_el = row.select_one("a[href*='/football/']")
-                game_url = f"https://www.oddsportal.com{link_el['href']}" if link_el else url
-
-                # Kickoff
-                time_el = row.select_one("[class*='time'], [class*='date']")
-                kickoff_str = time_el.get_text(strip=True) if time_el else "TBD"
-
-                # Odds 1X2
-                odd_els = row.select("div[class*='odds-wrap'] span, td[class*='odds-nowrap'] span, p[class*='avg']")
-                odds = [parse_odd(el.get_text()) for el in odd_els if parse_odd(el.get_text())]
-
+                game_url = row.get("url", url)
+                kickoff_str = row.get("kickoff", "TBD")
+                kickoff_str_fmt, kickoff_ts = parse_kickoff(kickoff_str)
+                odds = row.get("odds", [])
                 game = GameOdds(
-                    game=game_name,
-                    home=home,
-                    away=away,
-                    league=league_name,
-                    kickoff=kickoff_str,
-                    kickoff_dt=datetime.now(timezone.utc),
-                    url=game_url,
+                    game=game_name, home=home, away=away,
+                    league=league_name, kickoff=kickoff_str_fmt,
+                    kickoff_ts=kickoff_ts, url=game_url,
                     odd_1=odds[0] if len(odds) > 0 else None,
                     odd_x=odds[1] if len(odds) > 1 else None,
                     odd_2=odds[2] if len(odds) > 2 else None,
                 )
                 games.append(game)
-
             except Exception as e:
                 log.debug(f"Erro ao parsear row: {e}")
-                continue
 
+        log.info(f"{league_name}: {len(games)} jogos encontrados")
+
+    except PlaywrightTimeout:
+        log.warning(f"{league_name}: timeout")
     except Exception as e:
-        log.warning(f"Erro ao parsear {league_name}: {e}")
+        log.error(f"{league_name}: erro — {e}")
 
-    log.info(f"{league_name}: {len(games)} jogos encontrados")
     return games
 
 
-def scrape_all_leagues() -> list[GameOdds]:
-    """Faz scraping de todas as ligas configuradas."""
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
+async def scrape_all_leagues_async() -> list[GameOdds]:
     all_games = []
-    for league_name, url in LEAGUE_URLS.items():
-        try:
-            games = scrape_league(league_name, url, session)
-            all_games.extend(games)
-            # Pausa entre ligas para não ser bloqueado
-            time.sleep(random.uniform(2, 4))
-        except Exception as e:
-            log.error(f"Erro em {league_name}: {e}")
-
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox",
+                  "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
+        await context.route("**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}",
+                          lambda route: route.abort())
+        page = await context.new_page()
+        for league_name, url in LEAGUE_URLS.items():
+            try:
+                games = await scrape_league_page(page, league_name, url)
+                all_games.extend(games)
+                await asyncio.sleep(2)
+            except Exception as e:
+                log.error(f"Erro em {league_name}: {e}")
+        await browser.close()
     log.info(f"Total: {len(all_games)} jogos em {len(LEAGUE_URLS)} ligas")
     return all_games
+
+
+def scrape_all_leagues() -> list[GameOdds]:
+    return asyncio.run(scrape_all_leagues_async())
+

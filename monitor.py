@@ -104,13 +104,17 @@ def analyse_game(game: GameOdds) -> list[dict]:
     }]
 
 
-def run_monitor(test_mode: bool = False, report_mode: bool = False) -> None:
+def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode: bool = False) -> None:
     log.info("=" * 50)
     log.info("VALUE BET MONITOR — A iniciar")
     log.info("=" * 50)
 
     if test_mode:
         send_test_message()
+        return
+
+    if export_mode:
+        export_picks()
         return
 
     if report_mode:
@@ -200,8 +204,56 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False) -> None:
     log.info(f"Concluído: {sent} alertas enviados")
 
 
+
+def export_picks() -> None:
+    """Envia picks_log.json por email para análise e recalibração."""
+    from alert import send_telegram, GMAIL_USER, GMAIL_APP_PASSWORD
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.base import MIMEBase
+    from email import encoders
+
+    picks_file = Path("picks_log.json")
+    if not picks_file.exists():
+        send_telegram("⚠️ picks_log.json não encontrado — ainda não há picks registados.")
+        return
+
+    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
+        log.error("Gmail não configurado")
+        return
+
+    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    data = picks_file.read_bytes()
+
+    msg = MIMEMultipart()
+    msg["Subject"] = f"📦 Value Bet Monitor — Export picks_log ({now})"
+    msg["From"]    = GMAIL_USER
+    msg["To"]      = GMAIL_USER
+    msg.attach(MIMEText(
+        f"Export gerado em {now}.\n\nUsa este ficheiro para recalibrar o modelo.",
+        "plain"
+    ))
+
+    attachment = MIMEBase("application", "octet-stream")
+    attachment.set_payload(data)
+    encoders.encode_base64(attachment)
+    attachment.add_header("Content-Disposition", "attachment", filename="picks_log.json")
+    msg.attach(attachment)
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            s.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
+        log.info("Export enviado por email")
+        send_telegram(f"📦 <b>Export enviado</b>\nFicheiro picks_log.json enviado para {GMAIL_USER}")
+    except Exception as e:
+        log.error(f"Erro no export: {e}")
+        send_telegram(f"⚠️ Erro no export: {e}")
+
 if __name__ == "__main__":
     run_monitor(
         test_mode="--test" in sys.argv,
         report_mode="--report" in sys.argv,
+        export_mode="--export" in sys.argv,
     )

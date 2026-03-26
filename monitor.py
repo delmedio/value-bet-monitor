@@ -43,23 +43,22 @@ def save_cache(cache: set) -> None:
 
 
 def analyse_game(game: GameOdds) -> list[dict]:
-    """Analisa todos os mercados de um jogo e retorna value bets."""
-    value_bets = []
+    """Analisa todos os mercados de um jogo — agrupa num único alerta por jogo."""
+    candidates = []
 
-    # Match Odds 1X2
-    for odd, market, selection in [
-        (game.odd_1, "Match Odds", game.home),
-        (game.odd_2, "Match Odds", game.away),
+    # Match Odds — sem empates
+    for odd, selection in [
+        (game.odd_1, game.home),
+        (game.odd_2, game.away),
     ]:
         if odd:
             result = is_value_bet(odd)
             if result:
-                value_bets.append({
-                    "game": game.game, "league": game.league,
-                    "kickoff": game.kickoff, "kickoff_ts": game.kickoff_ts,
-                    "market": market, "selection": selection,
-                    "bookmaker": "Bet365", "url": game.url, **result,
-                })
+                candidates.append((result["edge_pct"], {
+                    "market": "Match Odds",
+                    "selection": selection,
+                    **result,
+                }))
 
     # Over/Under
     if game.ou_line:
@@ -67,13 +66,11 @@ def analyse_game(game: GameOdds) -> list[dict]:
             if odd:
                 result = is_value_bet(odd)
                 if result:
-                    value_bets.append({
-                        "game": game.game, "league": game.league,
-                        "kickoff": game.kickoff, "kickoff_ts": game.kickoff_ts,
+                    candidates.append((result["edge_pct"], {
                         "market": "Over/Under",
                         "selection": f"{side} {game.ou_line}",
-                        "bookmaker": "Bet365", "url": game.url, **result,
-                    })
+                        **result,
+                    }))
 
     # Asian Handicap
     if game.ah_line:
@@ -85,13 +82,28 @@ def analyse_game(game: GameOdds) -> list[dict]:
                 result = is_value_bet(odd)
                 if result:
                     sign = "+" if line >= 0 else ""
-                    value_bets.append({
-                        "game": game.game, "league": game.league,
-                        "kickoff": game.kickoff, "kickoff_ts": game.kickoff_ts,
+                    candidates.append((result["edge_pct"], {
                         "market": "Asian Handicap",
                         "selection": f"{team} {sign}{line}",
-                        "bookmaker": "Bet365", "url": game.url, **result,
-                    })
+                        **result,
+                    }))
+
+    if not candidates:
+        return []
+
+    # Retorna só o melhor mercado por jogo
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best = candidates[0][1]
+
+    return [{
+        "game": game.game,
+        "league": game.league,
+        "kickoff": game.kickoff,
+        "kickoff_ts": game.kickoff_ts,
+        "bookmaker": "Bet365",
+        "url": game.url,
+        **best,
+    }]
 
     return value_bets
 

@@ -1,6 +1,7 @@
 """
 monitor.py — Script principal do Value Bet Monitor
-Odds API 100K | 37 ligas | Filtro: jogos a partir de 15 Abr 2026
+Odds API 100K | 35 ligas | Filtro: jogos ≥ 15 Abr 2026
+Sem notificações entre 00:00 e 08:00 UTC
 """
 
 import os
@@ -13,7 +14,8 @@ from pathlib import Path
 from model import is_value_bet, MIN_KICKOFF_DATE
 from scraper import fetch_all_leagues, GameOdds
 from tracker import save_pick, track_pending_picks, make_pick_id, Pick
-from alert import send_telegram, format_alert, format_scan_summary, send_test_message, send_weekly_report
+from alert import (send_telegram, format_alert, format_scan_summary,
+                   send_test_message, send_weekly_report)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,6 +26,16 @@ log = logging.getLogger(__name__)
 
 CACHE_FILE = Path("sent_alerts.json")
 MAX_ALERTS_PER_SCAN = 15
+
+# Horário de silêncio (UTC) — sem alertas entre estas horas
+QUIET_HOUR_START = 0   # meia-noite
+QUIET_HOUR_END   = 8   # 08:00
+
+
+def is_quiet_hours() -> bool:
+    """Verifica se estamos no período de silêncio (00:00–08:00 UTC)."""
+    hour = datetime.now(timezone.utc).hour
+    return QUIET_HOUR_START <= hour < QUIET_HOUR_END
 
 
 def load_cache() -> set:
@@ -40,7 +52,7 @@ def save_cache(cache: set) -> None:
 
 
 def analyse_game(game: GameOdds) -> list[dict]:
-    """Analisa todos os mercados de um jogo. Retorna só o melhor por jogo."""
+    """Analisa todos os mercados — retorna só o melhor por jogo. Sem empates."""
     candidates = []
 
     # Match Odds — sem empates
@@ -61,11 +73,9 @@ def analyse_game(game: GameOdds) -> list[dict]:
 
     # Asian Handicap
     if game.b365_ah_line:
-        home_line = game.b365_ah_line
-        away_line = -game.b365_ah_line
         for odd, team, line in [
-            (game.b365_ah_home, game.home, home_line),
-            (game.b365_ah_away, game.away, away_line),
+            (game.b365_ah_home, game.home,  game.b365_ah_line),
+            (game.b365_ah_away, game.away, -game.b365_ah_line),
         ]:
             if odd:
                 r = is_value_bet(odd)
@@ -77,19 +87,18 @@ def analyse_game(game: GameOdds) -> list[dict]:
     if not candidates:
         return []
 
-    # Melhor mercado por jogo
     candidates.sort(key=lambda x: x[0], reverse=True)
     edge, market, selection, odd, result = candidates[0]
 
     return [{
-        "event_id": game.event_id,
-        "sport_key": game.sport_key,
-        "game": game.game,
-        "league": game.league,
-        "kickoff": game.kickoff,
-        "kickoff_ts": game.kickoff_ts,
-        "market": market,
-        "selection": selection,
+        "event_id":    game.event_id,
+        "sport_key":   game.sport_key,
+        "game":        game.game,
+        "league":      game.league,
+        "kickoff":     game.kickoff,
+        "kickoff_ts":  game.kickoff_ts,
+        "market":      market,
+        "selection":   selection,
         "opening_odd": odd,
         **result,
     }]
@@ -109,23 +118,22 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False) -> None:
         send_weekly_report(days=7)
         return
 
-    # Tracking de picks pendentes (CLV real via Pinnacle)
+    # Período de silêncio — tracking corre mas sem alertas
+    quiet = is_quiet_hours()
+    if quiet:
+        log.info("Período de silêncio (00:00–08:00 UTC) — tracking corre, sem alertas")
+
+    # Tracking de picks pendentes (CLV real via Pinnacle — só para o report semanal)
     log.info("A verificar picks pendentes...")
     try:
-        newly_tracked = track_pending_picks()
-        for pick in newly_tracked:
-            emoji = "✅" if pick.clv_real >= 0 else "❌"
-            send_telegram(
-                f"{emoji} <b>CLV Real apurado</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🏟 {pick.game}\n"
-                f"📌 {pick.market} — {pick.selection}\n"
-                f"💰 Abertura: {pick.opening_odd:.3f}\n"
-                f"📉 Fecho Pinnacle: {pick.pin_closing_odd:.3f}\n"
-                f"📈 CLV real: <b>{pick.clv_real:+.1f}%</b>"
-            )
+        track_pending_picks()
     except Exception as e:
         log.error(f"Erro no tracking: {e}")
+
+    # Período de silêncio — não busca odds (poupa requests)
+    if quiet:
+        log.info("Período de silêncio — scan de odds ignorado")
+        return
 
     # Busca odds
     sent_cache = load_cache()
@@ -179,9 +187,9 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False) -> None:
                 min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
                 alerted_at=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M"),
             ))
-            if "Elite" in vb["level"]: elite += 1
+            if "Elite" in vb["level"]:   elite += 1
             elif "Strong" in vb["level"]: strong += 1
-            else: normal += 1
+            else:                         normal += 1
 
     save_cache(sent_cache)
     send_telegram(format_scan_summary(

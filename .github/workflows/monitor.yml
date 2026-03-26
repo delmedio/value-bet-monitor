@@ -2,30 +2,31 @@ name: Value Bet Monitor
 
 on:
   schedule:
+    # De hora a hora
     - cron: '0 * * * *'
+    # Report semanal — terças às 08:00 UTC
+    - cron: '0 8 * * 2'
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Modo de execução'
+        description: 'Modo'
         required: false
         default: 'normal'
         type: choice
         options:
-          - 'normal'
-          - 'test'
-          - 'report'
+          - normal
+          - test
+          - report
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -33,18 +34,14 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
 
-      - name: Instalar Playwright
-        run: playwright install chromium --with-deps
-
-      - name: Restaurar cache de picks
+      - name: Restaurar cache
         uses: actions/cache@v4
         with:
           path: |
             sent_alerts.json
             picks_log.json
-          key: monitor-cache-${{ github.run_number }}
-          restore-keys: |
-            monitor-cache-
+          key: vbm-cache-${{ github.run_number }}
+          restore-keys: vbm-cache-
 
       - name: Correr monitor
         env:
@@ -52,6 +49,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: |
           MODE="${{ github.event.inputs.mode }}"
           if [ "$MODE" = "test" ]; then
@@ -68,4 +66,4 @@ jobs:
           path: |
             sent_alerts.json
             picks_log.json
-          key: monitor-cache-${{ github.run_number }}
+          key: vbm-cache-${{ github.run_number }}

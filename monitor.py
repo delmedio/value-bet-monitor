@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from model import is_value_bet, MIN_KICKOFF_DATE
-from scraper import fetch_all_leagues, GameOdds
+from scraper import fetch_all_leagues, GameOdds, LEAGUE_KEYS
 from tracker import save_pick, track_pending_picks, make_pick_id, Pick
 from alert import (send_telegram, format_alert, format_scan_summary,
                    send_test_message, send_weekly_report)
@@ -195,7 +195,7 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False) -> None:
     send_telegram(format_scan_summary(
         total_games=len(games), value_bets=sent,
         elite=elite, strong=strong, normal=normal,
-        leagues_scanned=len(set(g.league for g in games)),
+        leagues_scanned=len(set(g.league for g in games)) if games else len(LEAGUE_KEYS),
     ))
     log.info(f"Concluído: {sent} alertas enviados")
 
@@ -205,3 +205,4 @@ if __name__ == "__main__":
         test_mode="--test" in sys.argv,
         report_mode="--report" in sys.argv,
     )
+

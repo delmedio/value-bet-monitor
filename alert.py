@@ -49,7 +49,7 @@ def format_alert(game, league, kickoff, market, selection,
         f"⏰ {kickoff}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📌 <b>{market}</b> — {selection}\n"
-        f"💰 Bet365: <b>{opening_odd:.3f}</b>\n"
+        f"💰 1xBet: <b>{opening_odd:.3f}</b>\n"
         f"⚖️ Fair: ~{fair_odd:.2f} | Mín: <b>{min_odd:.2f}</b>\n"
         f"📈 Edge: <b>+{edge_pct:.1f}%</b> CLV esperado\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -370,5 +370,4 @@ th{{background:#f0f0f0;padding:7px 10px;text-align:left;font-size:11px;color:#55
     except Exception as e:
         log.error(f"Erro email: {e}")
         return False
-
 

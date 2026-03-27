@@ -1,24 +1,25 @@
 """
-model.py — Modelo de calibração combinado
-Special One (182 picks) + Andrey2505 (521 picks Bet365)
-CLV médio real confirmado: +10.1% | Beat the line: 76%
+model.py — Modelo de calibração ajustado para 1xBet
+Base: Special One (182 picks) + Andrey2505 (521 picks Bet365)
+Ajuste: +0.020 nos factores para compensar margem menor do 1xBet (~3.5% vs ~5.5%)
+
+O 1xBet abre genuinamente mais alto que Bet365/Betano/Stake.
+O valor está em apostar nas casas europeias antes que corrijam para as odds do 1xBet.
+Threshold: 10% — calibrado com diferença real observada (2.32 1xBet vs 2.15-2.25 Bet365/Betano)
 """
 
-# Factores combinados: média entre Special One e Andrey2505
 CALIBRATION_FACTORS = {
-    (1.70, 1.80): 0.869,
-    (1.80, 1.90): 0.881,
-    (1.90, 2.00): 0.879,
-    (2.00, 2.15): 0.858,
-    (2.15, 2.50): 0.845,
+    (1.70, 1.80): 0.889,
+    (1.80, 1.90): 0.901,
+    (1.90, 2.00): 0.899,
+    (2.00, 2.15): 0.878,
+    (2.15, 2.50): 0.865,
 }
 
 MIN_EDGE_PCT = 10.0
 MIN_ODD = 1.70
 MAX_ODD = 2.50
 
-# Data mínima para alertar (jogos a partir desta data)
-# Formato: "YYYY-MM-DD" — None para sem filtro
 MIN_KICKOFF_DATE = "2026-04-15"
 
 
@@ -56,9 +57,9 @@ def is_value_bet(opening_odd: float) -> dict | None:
     if edge < MIN_EDGE_PCT:
         return None
     min_odd = minimum_acceptable_odd(fair_odd)
-    if edge >= 20:
+    if edge >= 22:
         level = "🔥 Elite"
-    elif edge >= 14:
+    elif edge >= 16:
         level = "✅ Strong"
     else:
         level = "📊 Value"

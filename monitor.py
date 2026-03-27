@@ -195,11 +195,12 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode:
             else:                         normal += 1
 
     save_cache(sent_cache)
-    send_telegram(format_scan_summary(
-        total_games=len(games), value_bets=sent,
-        elite=elite, strong=strong, normal=normal,
-        leagues_scanned=len(LEAGUE_KEYS),
-    ))
+    if not quiet:
+        send_telegram(format_scan_summary(
+            total_games=len(games), value_bets=sent,
+            elite=elite, strong=strong, normal=normal,
+            leagues_scanned=len(LEAGUE_KEYS),
+        ))
     log.info(f"Concluído: {sent} alertas enviados")
 
 

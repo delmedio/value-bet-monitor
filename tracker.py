@@ -48,7 +48,16 @@ def load_picks() -> list[Pick]:
         return []
     try:
         data = json.loads(PICKS_FILE.read_text())
-        return [Pick(**p) for p in data.get("picks", [])]
+        picks = []
+        valid_fields = {f.name for f in Pick.__dataclass_fields__.values()}
+        for p in data.get("picks", []):
+            # Remove campos desconhecidos (compatibilidade com versões antigas)
+            clean = {k: v for k, v in p.items() if k in valid_fields}
+            try:
+                picks.append(Pick(**clean))
+            except Exception as e:
+                log.debug(f"Pick ignorado: {e}")
+        return picks
     except Exception as e:
         log.error(f"Erro ao carregar picks: {e}")
         return []
@@ -214,4 +223,4 @@ def get_cumulative_stats() -> dict:
         "beat_count": beat,
         "beat_pct":   round(beat / len(clv_vals) * 100, 1),
     }
-    
+

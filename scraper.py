@@ -1,7 +1,8 @@
 """
 scraper.py — Busca odds via The Odds API (plano 100K)
-Sport keys validados contra API em 26/03/2026
-35 ligas cobertas
+Bookmaker principal: 1xBet (onexbet) — abre jogos muito cedo, AH + Goal Line completos
+Pinnacle incluído como referência para CLV
+Sport keys validados em 26/03/2026
 """
 
 import os
@@ -17,66 +18,40 @@ ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 BASE_URL = "https://api.the-odds-api.com/v4"
 
 LEAGUE_KEYS = {
-    # Portugal
     "Liga Portugal 1":        "soccer_portugal_primeira_liga",
-    # Espanha
     "La Liga":                "soccer_spain_la_liga",
     "La Liga 2":              "soccer_spain_segunda_division",
-    # Inglaterra
     "Premier League":         "soccer_epl",
     "Championship":           "soccer_efl_champ",
     "League 1":               "soccer_england_league1",
-    # Itália
     "Serie A":                "soccer_italy_serie_a",
-    # Alemanha
     "Bundesliga":             "soccer_germany_bundesliga",
     "2. Bundesliga":          "soccer_germany_bundesliga2",
-    # França
     "Ligue 1":                "soccer_france_ligue_one",
-    # Holanda
     "Eredivisie":             "soccer_netherlands_eredivisie",
-    # Escócia
     "Scottish Premiership":   "soccer_spl",
-    # Bélgica
     "Jupiler Pro League":     "soccer_belgium_first_div",
-    # Grécia
     "Super League Greece":    "soccer_greece_super_league",
-    # Noruega
     "Eliteserien":            "soccer_norway_eliteserien",
-    # Suécia
     "Allsvenskan":            "soccer_sweden_allsvenskan",
-    # Dinamarca
     "Superliga Denmark":      "soccer_denmark_superliga",
-    # Finlândia
     "Veikkausliiga":          "soccer_finland_veikkausliiga",
-    # Suíça
     "Swiss Superleague":      "soccer_switzerland_superleague",
-    # Áustria
     "Bundesliga Austria":     "soccer_austria_bundesliga",
-    # Competições europeias
     "Champions League":       "soccer_uefa_champs_league",
     "Europa League":          "soccer_uefa_europa_league",
     "Conference League":      "soccer_uefa_europa_conference_league",
-    # Brasil
     "Serie A Brazil":         "soccer_brazil_campeonato",
     "Serie B Brazil":         "soccer_brazil_serie_b",
-    # Argentina
     "Primera Division AR":    "soccer_argentina_primera_division",
-    # Sul-América
     "Copa Libertadores":      "soccer_conmebol_copa_libertadores",
     "Copa Sudamericana":      "soccer_conmebol_copa_sudamericana",
-    # México
     "Liga MX":                "soccer_mexico_ligamx",
-    # EUA
     "MLS":                    "soccer_usa_mls",
-    # Mundial
     "FIFA World Cup":         "soccer_fifa_world_cup",
-    # Ásia
     "J1 League":              "soccer_japan_j_league",
     "K League 1":             "soccer_korea_kleague1",
-    # Oceânia
     "A-League":               "soccer_australia_aleague",
-    # China
     "Chinese Super League":   "soccer_china_superleague",
 }
 
@@ -91,6 +66,7 @@ class GameOdds:
     sport_key: str
     kickoff: str
     kickoff_ts: float
+    # 1xBet odds
     b365_1: float | None = None
     b365_x: float | None = None
     b365_2: float | None = None
@@ -100,9 +76,11 @@ class GameOdds:
     b365_ah_line: float | None = None
     b365_ah_home: float | None = None
     b365_ah_away: float | None = None
+    # Pinnacle (referência CLV)
     pin_1: float | None = None
     pin_x: float | None = None
     pin_2: float | None = None
+    bookmaker: str = "1xBet"
 
 
 def get_remaining(headers: dict) -> int:
@@ -119,7 +97,7 @@ def fetch_league(sport_key: str, league_name: str) -> list[GameOdds]:
         "apiKey": ODDS_API_KEY,
         "regions": "eu",
         "markets": "h2h,totals,spreads",
-        "bookmakers": "bet365,pinnacle",
+        "bookmakers": "onexbet,pinnacle",
         "oddsFormat": "decimal",
         "dateFormat": "iso",
     }
@@ -171,7 +149,7 @@ def parse_event(ev: dict, league_name: str, sport_key: str) -> GameOdds | None:
                 mk = market.get("key", "")
                 outcomes = market.get("outcomes", [])
 
-                if key == "bet365":
+                if key == "onexbet":
                     if mk == "h2h":
                         for o in outcomes:
                             if o["name"] == home:      game.b365_1 = o["price"]
@@ -206,7 +184,7 @@ def parse_event(ev: dict, league_name: str, sport_key: str) -> GameOdds | None:
 
 
 def fetch_closing_odds(event_id: str, sport_key: str) -> dict | None:
-    """Busca odds históricas (fecho) da Pinnacle via Historical Odds."""
+    """Busca odds históricas (fecho) da Pinnacle."""
     url = f"{BASE_URL}/sports/{sport_key}/events/{event_id}/odds"
     params = {
         "apiKey": ODDS_API_KEY,
@@ -271,3 +249,4 @@ def fetch_all_leagues(min_kickoff_date: str | None = None) -> list[GameOdds]:
 
     log.info(f"Total: {len(all_games)} jogos em {len(LEAGUE_KEYS)} ligas")
     return all_games
+    

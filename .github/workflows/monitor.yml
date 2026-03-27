@@ -3,45 +3,37 @@ name: Value Bet Monitor
 on:
   schedule:
     - cron: '0 * * * *'
+    - cron: '0 8 * * 2'
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Modo de execução'
+        description: 'Modo'
         required: false
         default: 'normal'
         type: choice
         options:
-          - 'normal'
-          - 'test'
-          - 'report'
+          - normal
+          - test
+          - report
+          - export
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
 
       - name: Instalar dependências
         run: pip install -r requirements.txt
-
-      - name: Restaurar cache de picks
-        uses: actions/cache@v4
-        with:
-          path: |
-            sent_alerts.json
-            picks_log.json
-          key: monitor-cache-${{ github.run_number }}
-          restore-keys: |
-            monitor-cache-
 
       - name: Correr monitor
         env:
@@ -62,11 +54,11 @@ jobs:
             python monitor.py
           fi
 
-      - name: Guardar cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            sent_alerts.json
-            picks_log.json
-          key: monitor-cache-${{ github.run_number }}
+      - name: Guardar cache no repositório
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git add -f sent_alerts.json picks_log.json 2>/dev/null || true
+          git commit -m "cache: $(date -u '+%Y-%m-%d %H:%M')" || true
+          git push || true
 

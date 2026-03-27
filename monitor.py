@@ -166,33 +166,34 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode:
     new_vbs.sort(key=lambda x: x[1]["edge_pct"], reverse=True)
     log.info(f"Value bets novas: {len(new_vbs)}")
 
-    # Envia alertas
+    # Envia alertas (nunca durante período de silêncio)
     sent = elite = strong = normal = 0
-    for key, vb in new_vbs[:MAX_ALERTS_PER_SCAN]:
-        msg = format_alert(
-            game=vb["game"], league=vb["league"], kickoff=vb["kickoff"],
-            market=vb["market"], selection=vb["selection"],
-            opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
-            min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
-        )
-        if send_telegram(msg):
-            sent_cache.add(key)
-            sent += 1
-            save_pick(Pick(
-                id=key,
-                event_id=vb["event_id"],
-                sport_key=vb["sport_key"],
-                game=vb["game"], league=vb["league"],
-                kickoff=vb["kickoff"], kickoff_ts=vb["kickoff_ts"],
+    if not quiet:
+        for key, vb in new_vbs[:MAX_ALERTS_PER_SCAN]:
+            msg = format_alert(
+                game=vb["game"], league=vb["league"], kickoff=vb["kickoff"],
                 market=vb["market"], selection=vb["selection"],
-                bookmaker="1xBet",
                 opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
                 min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
-                alerted_at=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M"),
-            ))
-            if "Elite" in vb["level"]:   elite += 1
-            elif "Strong" in vb["level"]: strong += 1
-            else:                         normal += 1
+            )
+            if send_telegram(msg):
+                sent_cache.add(key)
+                sent += 1
+                save_pick(Pick(
+                    id=key,
+                    event_id=vb["event_id"],
+                    sport_key=vb["sport_key"],
+                    game=vb["game"], league=vb["league"],
+                    kickoff=vb["kickoff"], kickoff_ts=vb["kickoff_ts"],
+                    market=vb["market"], selection=vb["selection"],
+                    bookmaker="1xBet",
+                    opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
+                    min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
+                    alerted_at=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M"),
+                ))
+                if "Elite" in vb["level"]:   elite += 1
+                elif "Strong" in vb["level"]: strong += 1
+                else:                         normal += 1
 
     save_cache(sent_cache)
     if not quiet:
@@ -257,4 +258,3 @@ if __name__ == "__main__":
         report_mode="--report" in sys.argv,
         export_mode="--export" in sys.argv,
     )
-

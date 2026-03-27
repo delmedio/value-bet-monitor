@@ -186,7 +186,7 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode:
                 game=vb["game"], league=vb["league"],
                 kickoff=vb["kickoff"], kickoff_ts=vb["kickoff_ts"],
                 market=vb["market"], selection=vb["selection"],
-                bookmaker="Bet365",
+                bookmaker="1xBet",
                 opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
                 min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
                 alerted_at=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M"),

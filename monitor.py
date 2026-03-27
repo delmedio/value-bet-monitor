@@ -132,12 +132,11 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode:
     try:
         track_pending_picks()
     except Exception as e:
-        log.error(f"Erro no tracking: {e}")
+        log.error(f"Erro no tracking: {e} — picks_log.json pode ter formato antigo, a ignorar")
 
-    # Período de silêncio — não busca odds (poupa requests)
+    # Período de silêncio — scan corre mas sem alertas (não perde aberturas de madrugada)
     if quiet:
-        log.info("Período de silêncio — scan de odds ignorado")
-        return
+        log.info("Período de silêncio — scan corre mas sem alertas")
 
     # Busca odds
     sent_cache = load_cache()
@@ -257,3 +256,4 @@ if __name__ == "__main__":
         report_mode="--report" in sys.argv,
         export_mode="--export" in sys.argv,
     )
+

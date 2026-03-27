@@ -28,14 +28,7 @@ CACHE_FILE = Path("sent_alerts.json")
 MAX_ALERTS_PER_SCAN = 15
 
 # Horário de silêncio (UTC) — sem alertas entre estas horas
-QUIET_HOUR_START = 0   # meia-noite
-QUIET_HOUR_END   = 8   # 08:00
 
-
-def is_quiet_hours() -> bool:
-    """Verifica se estamos no período de silêncio (00:00–08:00 UTC)."""
-    hour = datetime.now(timezone.utc).hour
-    return QUIET_HOUR_START <= hour < QUIET_HOUR_END
 
 
 def load_cache() -> set:
@@ -122,21 +115,12 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode:
         send_weekly_report(days=7)
         return
 
-    # Período de silêncio — tracking corre mas sem alertas
-    quiet = is_quiet_hours()
-    if quiet:
-        log.info("Período de silêncio (00:00–08:00 UTC) — tracking corre, sem alertas")
-
     # Tracking de picks pendentes (CLV real via Pinnacle — só para o report semanal)
     log.info("A verificar picks pendentes...")
     try:
         track_pending_picks()
     except Exception as e:
         log.error(f"Erro no tracking: {e} — picks_log.json pode ter formato antigo, a ignorar")
-
-    # Período de silêncio — scan corre mas sem alertas (não perde aberturas de madrugada)
-    if quiet:
-        log.info("Período de silêncio — scan corre mas sem alertas")
 
     # Busca odds
     sent_cache = load_cache()
@@ -166,42 +150,40 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode:
     new_vbs.sort(key=lambda x: x[1]["edge_pct"], reverse=True)
     log.info(f"Value bets novas: {len(new_vbs)}")
 
-    # Envia alertas (nunca durante período de silêncio)
+    # Envia alertas
     sent = elite = strong = normal = 0
-    if not quiet:
-        for key, vb in new_vbs[:MAX_ALERTS_PER_SCAN]:
-            msg = format_alert(
-                game=vb["game"], league=vb["league"], kickoff=vb["kickoff"],
+    for key, vb in new_vbs[:MAX_ALERTS_PER_SCAN]:
+        msg = format_alert(
+            game=vb["game"], league=vb["league"], kickoff=vb["kickoff"],
+            market=vb["market"], selection=vb["selection"],
+            opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
+            min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
+        )
+        if send_telegram(msg):
+            sent_cache.add(key)
+            sent += 1
+            save_pick(Pick(
+                id=key,
+                event_id=vb["event_id"],
+                sport_key=vb["sport_key"],
+                game=vb["game"], league=vb["league"],
+                kickoff=vb["kickoff"], kickoff_ts=vb["kickoff_ts"],
                 market=vb["market"], selection=vb["selection"],
+                bookmaker="1xBet",
                 opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
                 min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
-            )
-            if send_telegram(msg):
-                sent_cache.add(key)
-                sent += 1
-                save_pick(Pick(
-                    id=key,
-                    event_id=vb["event_id"],
-                    sport_key=vb["sport_key"],
-                    game=vb["game"], league=vb["league"],
-                    kickoff=vb["kickoff"], kickoff_ts=vb["kickoff_ts"],
-                    market=vb["market"], selection=vb["selection"],
-                    bookmaker="1xBet",
-                    opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
-                    min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
-                    alerted_at=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M"),
-                ))
-                if "Elite" in vb["level"]:   elite += 1
-                elif "Strong" in vb["level"]: strong += 1
-                else:                         normal += 1
+                alerted_at=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M"),
+            ))
+            if "Elite" in vb["level"]:   elite += 1
+            elif "Strong" in vb["level"]: strong += 1
+            else:                         normal += 1
 
     save_cache(sent_cache)
-    if not quiet:
-        send_telegram(format_scan_summary(
-            total_games=len(games), value_bets=sent,
-            elite=elite, strong=strong, normal=normal,
-            leagues_scanned=len(LEAGUE_KEYS),
-        ))
+    send_telegram(format_scan_summary(
+        total_games=len(games), value_bets=sent,
+        elite=elite, strong=strong, normal=normal,
+        leagues_scanned=len(LEAGUE_KEYS),
+    ))
     log.info(f"Concluído: {sent} alertas enviados")
 
 

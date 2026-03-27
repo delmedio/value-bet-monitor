@@ -19,7 +19,7 @@ MAX_ODD = 2.50
 
 # Data mínima para alertar (jogos a partir desta data)
 # Formato: "YYYY-MM-DD" — None para sem filtro
-MIN_KICKOFF_DATE = "2026-03-28"
+MIN_KICKOFF_DATE = "2026-04-15"
 
 
 def get_calibration_factor(odd: float) -> float | None:

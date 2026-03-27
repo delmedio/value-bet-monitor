@@ -1,9 +1,6 @@
 name: Value Bet Monitor
 
 on:
-  schedule:
-    - cron: '0 * * * *'
-    - cron: '0 8 * * 2'
   workflow_dispatch:
     inputs:
       mode:
@@ -61,4 +58,3 @@ jobs:
           git add -f sent_alerts.json picks_log.json 2>/dev/null || true
           git commit -m "cache: $(date -u '+%Y-%m-%d %H:%M')" || true
           git push || true
-

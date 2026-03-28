@@ -67,15 +67,15 @@ class GameOdds:
     kickoff: str
     kickoff_ts: float
     # 1xBet odds
-    b365_1: float | None = None
-    b365_x: float | None = None
-    b365_2: float | None = None
-    b365_ou_line: float | None = None
-    b365_over: float | None = None
-    b365_under: float | None = None
-    b365_ah_line: float | None = None
-    b365_ah_home: float | None = None
-    b365_ah_away: float | None = None
+    odds_1: float | None = None
+    odds_x: float | None = None
+    odds_2: float | None = None
+    odds_ou_line: float | None = None
+    odds_over: float | None = None
+    odds_under: float | None = None
+    odds_ah_line: float | None = None
+    odds_ah_home: float | None = None
+    odds_ah_away: float | None = None
     # Pinnacle (referência CLV)
     pin_1: float | None = None
     pin_x: float | None = None
@@ -152,23 +152,23 @@ def parse_event(ev: dict, league_name: str, sport_key: str) -> GameOdds | None:
                 if key == "onexbet":
                     if mk == "h2h":
                         for o in outcomes:
-                            if o["name"] == home:      game.b365_1 = o["price"]
-                            elif o["name"] == "Draw":  game.b365_x = o["price"]
-                            elif o["name"] == away:    game.b365_2 = o["price"]
+                            if o["name"] == home:      game.odds_1 = o["price"]
+                            elif o["name"] == "Draw":  game.odds_x = o["price"]
+                            elif o["name"] == away:    game.odds_2 = o["price"]
                     elif mk == "totals":
                         for o in outcomes:
                             if o["name"] == "Over":
-                                game.b365_over = o["price"]
-                                game.b365_ou_line = o.get("point")
+                                game.odds_over = o["price"]
+                                game.odds_ou_line = o.get("point")
                             elif o["name"] == "Under":
-                                game.b365_under = o["price"]
+                                game.odds_under = o["price"]
                     elif mk == "spreads":
                         for o in outcomes:
                             if o["name"] == home:
-                                game.b365_ah_home = o["price"]
-                                game.b365_ah_line = o.get("point")
+                                game.odds_ah_home = o["price"]
+                                game.odds_ah_line = o.get("point")
                             elif o["name"] == away:
-                                game.b365_ah_away = o["price"]
+                                game.odds_ah_away = o["price"]
 
                 elif key == "pinnacle":
                     if mk == "h2h":
@@ -249,4 +249,4 @@ def fetch_all_leagues(min_kickoff_date: str | None = None) -> list[GameOdds]:
 
     log.info(f"Total: {len(all_games)} jogos em {len(LEAGUE_KEYS)} ligas")
     return all_games
-    
+

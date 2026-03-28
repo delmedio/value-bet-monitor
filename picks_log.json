@@ -461,6 +461,27 @@
       "pin_closing_odd": null,
       "clv_real": null,
       "tracked_at": null
+    },
+    {
+      "id": "0d90b9e397",
+      "event_id": "6676391496ef12a780cd2397ce216d84",
+      "sport_key": "soccer_conmebol_copa_libertadores",
+      "game": "Fluminense-RJ vs Independiente Rivadavia",
+      "league": "Copa Libertadores",
+      "kickoff": "16/04/2026 00:30",
+      "kickoff_ts": 1776299400.0,
+      "market": "Asian Handicap",
+      "selection": "Fluminense-RJ -1.5",
+      "bookmaker": "1xBet",
+      "opening_odd": 2.03,
+      "fair_odd": 1.782,
+      "min_odd": 1.96,
+      "edge_pct": 13.92,
+      "level": "📊 Value",
+      "alerted_at": "28/03/2026 02:00",
+      "pin_closing_odd": null,
+      "clv_real": null,
+      "tracked_at": null
     }
   ]
 }

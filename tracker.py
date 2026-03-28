@@ -38,8 +38,10 @@ class Pick:
     tracked_at: str | None = None
 
 
-def make_pick_id(game: str, market: str, selection: str, odd: float) -> str:
-    raw = f"{game}|{market}|{selection}|{odd:.3f}"
+def make_pick_id(game: str, market: str, selection: str, odd: float = 0) -> str:
+    # ID baseado em jogo + mercado + selecção — sem odd para evitar duplicados
+    # quando a odd muda ligeiramente entre runs
+    raw = f"{game}|{market}|{selection}"
     return hashlib.md5(raw.encode()).hexdigest()[:10]
 
 

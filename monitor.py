@@ -49,26 +49,26 @@ def analyse_game(game: GameOdds) -> list[dict]:
     candidates = []
 
     # Match Odds — sem empates
-    for odd, selection in [(game.b365_1, game.home), (game.b365_2, game.away)]:
+    for odd, selection in [(game.odds_1, game.home), (game.odds_2, game.away)]:
         if odd:
             r = is_value_bet(odd)
             if r:
                 candidates.append((r["edge_pct"], "Match Odds", selection, odd, r))
 
     # Over/Under
-    if game.b365_ou_line:
-        for odd, side in [(game.b365_over, "Over"), (game.b365_under, "Under")]:
+    if game.odds_ou_line:
+        for odd, side in [(game.odds_over, "Over"), (game.odds_under, "Under")]:
             if odd:
                 r = is_value_bet(odd)
                 if r:
                     candidates.append((r["edge_pct"], "Over/Under",
-                                      f"{side} {game.b365_ou_line}", odd, r))
+                                      f"{side} {game.odds_ou_line}", odd, r))
 
     # Asian Handicap
-    if game.b365_ah_line:
+    if game.odds_ah_line:
         for odd, team, line in [
-            (game.b365_ah_home, game.home,  game.b365_ah_line),
-            (game.b365_ah_away, game.away, -game.b365_ah_line),
+            (game.odds_ah_home, game.home,  game.odds_ah_line),
+            (game.odds_ah_away, game.away, -game.odds_ah_line),
         ]:
             if odd:
                 r = is_value_bet(odd)
@@ -93,6 +93,9 @@ def analyse_game(game: GameOdds) -> list[dict]:
         "market":      market,
         "selection":   selection,
         "opening_odd": odd,
+        "odds_x":      game.odds_x,
+        "odds_over":   game.odds_over,
+        "odds_under":  game.odds_under,
         **result,
     }]
 
@@ -158,6 +161,8 @@ def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode:
             market=vb["market"], selection=vb["selection"],
             opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
             min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
+            odds_x=vb.get("odds_x"), odds_over=vb.get("odds_over"),
+            odds_under=vb.get("odds_under"),
         )
         if send_telegram(msg):
             sent_cache.add(key)

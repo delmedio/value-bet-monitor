@@ -365,9 +365,12 @@ def send_weekly_report(days: int = 7) -> bool:
     ) if data["pending"] else ""
 
     by_league_week: dict = defaultdict(list)
+    by_market_week: dict = defaultdict(list)
     for p in data["tracked"]:
         by_league_week[p.league].append(p)
+        by_market_week[p.market].append(p)
     league_rows_week = _league_table(dict(by_league_week))
+    market_rows_week = _league_table(dict(by_market_week))
 
     history_html = _history_section(weekly_stats)
 
@@ -429,6 +432,14 @@ th{{background:#f0f0f0;padding:7px 10px;text-align:left;font-size:11px;color:#55
     <tbody>{league_rows_week}</tbody>
   </table>
 
+  <h2 style="font-size:14px;font-weight:500;margin:16px 0 8px;padding-bottom:5px;border-bottom:1.5px solid #eee">
+    📌 CLV por mercado — esta semana
+  </h2>
+  <table>
+    <thead><tr><th>Mercado</th><th>Picks</th><th style="text-align:center">CLV médio</th><th style="text-align:center">Beat the line</th></tr></thead>
+    <tbody>{market_rows_week}</tbody>
+  </table>
+
   <h2 style="font-size:14px;font-weight:500;margin:20px 0 8px;padding-bottom:5px;border-bottom:1.5px solid #eee">
     🎯 Detalhe por jogo — esta semana
   </h2>
@@ -462,4 +473,3 @@ th{{background:#f0f0f0;padding:7px 10px;text-align:left;font-size:11px;color:#55
     except Exception as e:
         log.error(f"Erro email: {e}")
         return False
-

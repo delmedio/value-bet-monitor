@@ -419,6 +419,48 @@
       "pin_closing_odd": null,
       "clv_real": null,
       "tracked_at": null
+    },
+    {
+      "id": "fba686fa02",
+      "event_id": "aa47c5e1899558d8e11c4c7d3b83248a",
+      "sport_key": "soccer_conmebol_copa_libertadores",
+      "game": "Lanus vs Club Always Ready",
+      "league": "Copa Libertadores",
+      "kickoff": "16/04/2026 22:00",
+      "kickoff_ts": 1776376800.0,
+      "market": "Over/Under",
+      "selection": "Over 3.5",
+      "bookmaker": "1xBet",
+      "opening_odd": 2.3,
+      "fair_odd": 1.989,
+      "min_odd": 2.188,
+      "edge_pct": 15.64,
+      "level": "📊 Value",
+      "alerted_at": "28/03/2026 00:28",
+      "pin_closing_odd": null,
+      "clv_real": null,
+      "tracked_at": null
+    },
+    {
+      "id": "7b8c3c1410",
+      "event_id": "be6cdb6ddd27d099b5291f0d1e051d92",
+      "sport_key": "soccer_epl",
+      "game": "Newcastle United vs Bournemouth",
+      "league": "Premier League",
+      "kickoff": "18/04/2026 15:00",
+      "kickoff_ts": 1776524400.0,
+      "market": "Over/Under",
+      "selection": "Over 3.5",
+      "bookmaker": "1xBet",
+      "opening_odd": 2.21,
+      "fair_odd": 1.912,
+      "min_odd": 2.103,
+      "edge_pct": 15.59,
+      "level": "📊 Value",
+      "alerted_at": "28/03/2026 00:28",
+      "pin_closing_odd": null,
+      "clv_real": null,
+      "tracked_at": null
     }
   ]
 }

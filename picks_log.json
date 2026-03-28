@@ -482,6 +482,27 @@
       "pin_closing_odd": null,
       "clv_real": null,
       "tracked_at": null
+    },
+    {
+      "id": "b0869379e9",
+      "event_id": "95d68f9006aa718d447c759366118c31",
+      "sport_key": "soccer_epl",
+      "game": "Nottingham Forest vs Burnley",
+      "league": "Premier League",
+      "kickoff": "19/04/2026 13:00",
+      "kickoff_ts": 1776603600.0,
+      "market": "Over/Under",
+      "selection": "Under 2.5",
+      "bookmaker": "1xBet",
+      "opening_odd": 2.14,
+      "fair_odd": 1.879,
+      "min_odd": 2.067,
+      "edge_pct": 13.89,
+      "level": "📊 Value",
+      "alerted_at": "28/03/2026 03:00",
+      "pin_closing_odd": null,
+      "clv_real": null,
+      "tracked_at": null
     }
   ]
 }

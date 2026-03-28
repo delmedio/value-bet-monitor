@@ -249,4 +249,3 @@ def fetch_all_leagues(min_kickoff_date: str | None = None) -> list[GameOdds]:
 
     log.info(f"Total: {len(all_games)} jogos em {len(LEAGUE_KEYS)} ligas")
     return all_games
-

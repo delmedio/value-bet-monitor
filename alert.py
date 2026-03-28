@@ -473,3 +473,4 @@ th{{background:#f0f0f0;padding:7px 10px;text-align:left;font-size:11px;color:#55
     except Exception as e:
         log.error(f"Erro email: {e}")
         return False
+

@@ -225,3 +225,4 @@ def get_cumulative_stats() -> dict:
         "beat_count": beat,
         "beat_pct":   round(beat / len(clv_vals) * 100, 1),
     }
+

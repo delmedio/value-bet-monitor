@@ -57,4 +57,5 @@ jobs:
           git config user.name "GitHub Action"
           git add -f sent_alerts.json picks_log.json 2>/dev/null || true
           git commit -m "cache: $(date -u '+%Y-%m-%d %H:%M')" || true
-          git push || true
+          git pull --rebase origin main || true
+          git push origin main || true

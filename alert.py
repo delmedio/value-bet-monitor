@@ -39,8 +39,101 @@ def send_telegram(text: str) -> bool:
         return False
 
 
+
+# ── Conversão de linhas equivalentes ─────────────────────────────────────────
+
+def calc_dnb(home_odd: float, draw_odd: float) -> float | None:
+    """DNB home: se empate devolve, se home ganha ganhas."""
+    try:
+        p_home = 1 / home_odd
+        p_draw = 1 / draw_odd
+        return round(1 / (p_home / (p_home + p_draw)), 2)
+    except Exception:
+        return None
+
+
+def calc_ah025(home_odd: float, draw_odd: float) -> float | None:
+    """AH -0.25: split entre DNB (0.0) e home (-0.5)."""
+    try:
+        dnb = calc_dnb(home_odd, draw_odd)
+        if not dnb:
+            return None
+        return round(2 / (1 / dnb + 1 / home_odd), 2)
+    except Exception:
+        return None
+
+
+def calc_ou_quarter(main_odd: float, opposite_odd: float, direction: str) -> float | None:
+    """
+    Over/Under 2.25 ou Under 2.25 a partir da linha 2.5.
+    direction: 'over' ou 'under'
+    """
+    try:
+        p_main = 1 / main_odd
+        p_opp = 1 / opposite_odd
+        p_exact = 0.20 * p_opp
+        p_quarter = p_main + p_exact
+        quarter_odd = round(1 / p_quarter, 2)
+        # Quarter line = split entre main e um passo acima
+        result = round(2 / (1 / quarter_odd + 1 / main_odd), 2)
+        return result
+    except Exception:
+        return None
+
+
+def format_equivalent_lines(market: str, selection: str,
+                             opening_odd: float,
+                             odds_x: float | None = None,
+                             odds_over: float | None = None,
+                             odds_under: float | None = None) -> str:
+    """Gera as linhas equivalentes mínimas para o alerta."""
+    lines = []
+
+    if "Match Odds" in market:
+        # Precisa do empate para calcular DNB e AH -0.25
+        if odds_x:
+            dnb = calc_dnb(opening_odd, odds_x)
+            ah025 = calc_ah025(opening_odd, odds_x)
+            team = selection
+            if dnb:
+                lines.append(f"• DNB {team}: {dnb:.2f}")
+            if ah025:
+                lines.append(f"• AH {team} -0.25: {ah025:.2f}")
+
+    elif "Over/Under" in market:
+        if "Over" in selection and odds_under:
+            quarter = calc_ou_quarter(opening_odd, odds_under, "over")
+            line_val = selection.replace("Over ", "")
+            try:
+                lv = float(line_val)
+                new_lv = lv - 0.25
+                if quarter:
+                    lines.append(f"• Over {new_lv}: {quarter:.2f}")
+            except Exception:
+                pass
+        elif "Under" in selection and odds_over:
+            quarter = calc_ou_quarter(opening_odd, odds_over, "under")
+            line_val = selection.replace("Under ", "")
+            try:
+                lv = float(line_val)
+                new_lv = lv - 0.25
+                if quarter:
+                    lines.append(f"• Under {new_lv}: {quarter:.2f}")
+            except Exception:
+                pass
+
+    if not lines:
+        return ""
+    return "\n━━━━━━━━━━━━━━━━━━━━\nLinhas equivalentes mínimas:\n" + "\n".join(lines)
+
+
 def format_alert(game, league, kickoff, market, selection,
-                 opening_odd, fair_odd, min_odd, edge_pct, level) -> str:
+                 opening_odd, fair_odd, min_odd, edge_pct, level,
+                 odds_x=None, odds_over=None, odds_under=None) -> str:
+    eq_lines = format_equivalent_lines(
+        market, selection, opening_odd,
+        odds_x=odds_x, odds_over=odds_over, odds_under=odds_under
+    )
     return (
         f"{level}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -51,9 +144,8 @@ def format_alert(game, league, kickoff, market, selection,
         f"📌 <b>{market}</b> — {selection}\n"
         f"💰 1xBet: <b>{opening_odd:.3f}</b>\n"
         f"⚖️ Fair: ~{fair_odd:.2f} | Mín: <b>{min_odd:.2f}</b>\n"
-        f"📈 Edge: <b>+{edge_pct:.1f}%</b> CLV esperado\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<i>Aposta antes que o mercado corrija</i>"
+        f"📈 Edge: <b>+{edge_pct:.1f}%</b> CLV esperado"
+        f"{eq_lines}"
     )
 
 

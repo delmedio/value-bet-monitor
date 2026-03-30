@@ -202,7 +202,12 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     home     = event_data.get("home", "")
     away     = event_data.get("away", "")
     game     = f"{home} vs {away}"
-    league   = event_data.get("league", event_data.get("leagueName", ""))
+    # league pode ser dict {"name": ..., "slug": ...} ou string
+    league_raw = event_data.get("league", event_data.get("leagueName", ""))
+    if isinstance(league_raw, dict):
+        league = league_raw.get("name", "")
+    else:
+        league = league_raw
     kickoff  = _kickoff_str(event_data.get("date", event_data.get("startTime", "")))
     event_id = event_data.get("id", 0)
 
@@ -365,6 +370,14 @@ def fetch_events_for_league(slug: str) -> list[dict]:
     return []
 
 
+def _get_league_name(event: dict) -> str:
+    """Extrai nome da liga independentemente do formato (str ou dict)."""
+    league_raw = event.get("league", event.get("leagueName", ""))
+    if isinstance(league_raw, dict):
+        return league_raw.get("name", "")
+    return league_raw
+
+
 def fetch_events() -> list[dict]:
     """Busca eventos apenas das ligas alvo, uma a uma."""
     all_events = []
@@ -401,7 +414,7 @@ def fetch_value_bets() -> list[ValueBet]:
         return []
 
     relevant = [ev for ev in events
-                if ev.get("league", ev.get("leagueName", "")) in ALLOWED_LEAGUES]
+                if _get_league_name(ev) in ALLOWED_LEAGUES]
     logger.info(f"Eventos nas ligas alvo: {len(relevant)}")
 
     if not relevant:

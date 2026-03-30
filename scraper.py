@@ -301,7 +301,7 @@ def fetch_events() -> list[dict]:
     all_events = []
     page = 1
     while True:
-        data = _get("/events", {"sport": "Football", "bookmaker": "Bet365",
+        data = _get("/events", {"sport": "football", "bookmaker": "Bet365",
                                 "limit": 100, "page": page})
         if isinstance(data, list):
             if not data:

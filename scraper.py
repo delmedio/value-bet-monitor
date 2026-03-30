@@ -376,18 +376,31 @@ def fetch_events() -> list[dict]:
 
 
 def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
-    """Busca odds individualmente para cada evento (Bet365 + SBObet)."""
+    """Busca odds para cada evento (Bet365 + Sbobet).
+    Se Sbobet der 404, tenta só Bet365 — Sbobet ainda não tem o jogo (early bet).
+    """
     results = []
     for event_id in event_ids:
+        data = None
+        # Tenta com Bet365 + Sbobet
         try:
             data = _get("/odds", {"eventId": event_id,
                                   "bookmakers": "Bet365,Sbobet"})
-            if isinstance(data, dict) and data:
-                results.append(data)
-            elif isinstance(data, list) and data:
-                results.extend(data)
         except Exception as e:
-            logger.warning(f"fetch_odds {event_id}: {e}")
+            if "404" in str(e):
+                # Sbobet não tem este evento — tenta só Bet365
+                try:
+                    data = _get("/odds", {"eventId": event_id,
+                                          "bookmakers": "Bet365"})
+                except Exception as e2:
+                    logger.warning(f"fetch_odds {event_id}: {e2}")
+            else:
+                logger.warning(f"fetch_odds {event_id}: {e}")
+
+        if isinstance(data, dict) and data:
+            results.append(data)
+        elif isinstance(data, list) and data:
+            results.extend(data)
     return results
 
 

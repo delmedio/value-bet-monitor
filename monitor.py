@@ -1,34 +1,19 @@
 """
-monitor.py — Script principal do Value Bet Monitor
-Odds API 100K | 35 ligas | Filtro: jogos ≥ 15 Abr 2026
-Sem notificações entre 00:00 e 08:00 UTC
+monitor.py — Orquestrador principal.
 """
 
-import os
-import json
-import logging
-import sys
-from datetime import datetime, timezone
+import os, json, logging, argparse
 from pathlib import Path
+from datetime import datetime, timezone
 
-from model import is_value_bet, MIN_KICKOFF_DATE
-from scraper import fetch_all_leagues, GameOdds, LEAGUE_KEYS
-from tracker import save_pick, track_pending_picks, make_pick_id, Pick
-from alert import (send_telegram, format_alert, format_scan_summary,
-                   send_test_message, send_weekly_report)
+from scraper import fetch_value_bets, ValueBet
+from tracker import make_pick_id, save_pick, load_picks, track_pending_picks, Pick
+from alert import send_alert, send_scan_summary, send_weekly_report, send_export
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    datefmt="%H:%M:%S",
-)
-log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
 CACHE_FILE = Path("sent_alerts.json")
-MAX_ALERTS_PER_SCAN = 15
-
-# Horário de silêncio (UTC) — sem alertas entre estas horas
-
 
 
 def load_cache() -> set:
@@ -36,7 +21,7 @@ def load_cache() -> set:
         try:
             return set(json.loads(CACHE_FILE.read_text()).get("sent", []))
         except Exception:
-            return set()
+            pass
     return set()
 
 
@@ -44,204 +29,95 @@ def save_cache(cache: set) -> None:
     CACHE_FILE.write_text(json.dumps({"sent": list(cache)[-500:]}))
 
 
-def analyse_game(game: GameOdds) -> list[dict]:
-    """Analisa todos os mercados — retorna só o melhor por jogo. Sem empates."""
-    candidates = []
+def run_normal():
+    logger.info("=== Scan iniciado ===")
+    now_utc = datetime.now(timezone.utc)
+    scan_label = now_utc.strftime("%d/%m %H:%M UTC")
 
-    # Match Odds — sem empates
-    for odd, selection in [(game.odds_1, game.home), (game.odds_2, game.away)]:
-        if odd:
-            r = is_value_bet(odd)
-            if r:
-                candidates.append((r["edge_pct"], "Match Odds", selection, odd, r))
-
-    # Over/Under
-    if game.odds_ou_line:
-        for odd, side in [(game.odds_over, "Over"), (game.odds_under, "Under")]:
-            if odd:
-                r = is_value_bet(odd)
-                if r:
-                    candidates.append((r["edge_pct"], "Over/Under",
-                                      f"{side} {game.odds_ou_line}", odd, r))
-
-    # Asian Handicap
-    if game.odds_ah_line:
-        for odd, team, line in [
-            (game.odds_ah_home, game.home,  game.odds_ah_line),
-            (game.odds_ah_away, game.away, -game.odds_ah_line),
-        ]:
-            if odd:
-                r = is_value_bet(odd)
-                if r:
-                    sign = "+" if line >= 0 else ""
-                    candidates.append((r["edge_pct"], "Asian Handicap",
-                                      f"{team} {sign}{line}", odd, r))
-
-    if not candidates:
-        return []
-
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    edge, market, selection, odd, result = candidates[0]
-
-    return [{
-        "event_id":    game.event_id,
-        "sport_key":   game.sport_key,
-        "game":        game.game,
-        "league":      game.league,
-        "kickoff":     game.kickoff,
-        "kickoff_ts":  game.kickoff_ts,
-        "market":      market,
-        "selection":   selection,
-        "opening_odd": odd,
-        "odds_x":      game.odds_x,
-        "odds_over":   game.odds_over,
-        "odds_under":  game.odds_under,
-        **result,
-    }]
-
-
-def run_monitor(test_mode: bool = False, report_mode: bool = False, export_mode: bool = False) -> None:
-    log.info("=" * 50)
-    log.info("VALUE BET MONITOR — A iniciar")
-    log.info("=" * 50)
-
-    if test_mode:
-        send_test_message()
-        return
-
-    if export_mode:
-        export_picks()
-        return
-
-    if report_mode:
-        log.info("A gerar report semanal...")
-        send_weekly_report(days=7)
-        return
-
-    # Tracking de picks pendentes (CLV real via Pinnacle — só para o report semanal)
-    log.info("A verificar picks pendentes...")
     try:
         track_pending_picks()
     except Exception as e:
-        log.error(f"Erro no tracking: {e} — picks_log.json pode ter formato antigo, a ignorar")
-
-    # Busca odds
-    sent_cache = load_cache()
-    log.info(f"A buscar odds (filtro: jogos ≥ {MIN_KICKOFF_DATE})...")
+        logger.warning(f"track_pending_picks: {e}")
 
     try:
-        games = fetch_all_leagues(min_kickoff_date=MIN_KICKOFF_DATE)
+        value_bets = fetch_value_bets()
     except Exception as e:
-        log.error(f"Erro crítico: {e}")
-        send_telegram(f"⚠️ Erro no monitor: {e}")
-        return
+        logger.error(f"fetch_value_bets: {e}")
+        value_bets = []
 
-    log.info(f"Jogos encontrados: {len(games)}")
+    sent_cache = load_cache()
+    counts = {"Elite": 0, "Strong": 0, "Value": 0}
+    new_alerts = 0
 
-    # Análise
-    all_vbs = []
-    for game in games:
-        all_vbs.extend(analyse_game(game))
+    for vb in value_bets:
+        pick_id = make_pick_id(vb.game, vb.market, vb.selection)
+        if pick_id in sent_cache:
+            continue
 
-    # Remove duplicados
-    new_vbs = []
-    for vb in all_vbs:
-        key = make_pick_id(vb["game"], vb["market"], vb["selection"], vb["opening_odd"])
-        if key not in sent_cache:
-            new_vbs.append((key, vb))
+        try:
+            send_alert(vb)
+        except Exception as e:
+            logger.error(f"send_alert: {e}")
+            continue
 
-    new_vbs.sort(key=lambda x: x[1]["edge_pct"], reverse=True)
-    log.info(f"Value bets novas: {len(new_vbs)}")
-
-    # Envia alertas
-    sent = elite = strong = normal = 0
-    for key, vb in new_vbs[:MAX_ALERTS_PER_SCAN]:
-        msg = format_alert(
-            game=vb["game"], league=vb["league"], kickoff=vb["kickoff"],
-            market=vb["market"], selection=vb["selection"],
-            opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
-            min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
-            odds_x=vb.get("odds_x"), odds_over=vb.get("odds_over"),
-            odds_under=vb.get("odds_under"),
+        pick = Pick(
+            pick_id=pick_id,
+            game=vb.game,
+            league=vb.league,
+            market=vb.market,
+            selection=vb.selection,
+            kickoff=vb.kickoff,
+            opening_odd=vb.odds_b365,
+            odds_sbo_open=vb.odds_sbo,
+            fair_odd=vb.fair_odd,
+            edge_pct=vb.edge_pct,
+            level=vb.level,
+            bet_href=vb.bet_href,
+            event_id=vb.event_id,
         )
-        if send_telegram(msg):
-            sent_cache.add(key)
-            sent += 1
-            save_pick(Pick(
-                id=key,
-                event_id=vb["event_id"],
-                sport_key=vb["sport_key"],
-                game=vb["game"], league=vb["league"],
-                kickoff=vb["kickoff"], kickoff_ts=vb["kickoff_ts"],
-                market=vb["market"], selection=vb["selection"],
-                bookmaker="1xBet",
-                opening_odd=vb["opening_odd"], fair_odd=vb["fair_odd"],
-                min_odd=vb["min_odd"], edge_pct=vb["edge_pct"], level=vb["level"],
-                alerted_at=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M"),
-            ))
-            if "Elite" in vb["level"]:   elite += 1
-            elif "Strong" in vb["level"]: strong += 1
-            else:                         normal += 1
+        save_pick(pick)
+        sent_cache.add(pick_id)
+        new_alerts += 1
+
+        key = vb.level.split()[-1]
+        counts[key] = counts.get(key, 0) + 1
 
     save_cache(sent_cache)
-    send_telegram(format_scan_summary(
-        total_games=len(games), value_bets=sent,
-        elite=elite, strong=strong, normal=normal,
-        leagues_scanned=len(LEAGUE_KEYS),
-    ))
-    log.info(f"Concluído: {sent} alertas enviados")
-
-
-
-def export_picks() -> None:
-    """Envia picks_log.json por email para análise e recalibração."""
-    from alert import send_telegram, GMAIL_USER, GMAIL_APP_PASSWORD
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    from email.mime.base import MIMEBase
-    from email import encoders
-
-    picks_file = Path("picks_log.json")
-    if not picks_file.exists():
-        send_telegram("⚠️ picks_log.json não encontrado — ainda não há picks registados.")
-        return
-
-    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-        log.error("Gmail não configurado")
-        return
-
-    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
-    data = picks_file.read_bytes()
-
-    msg = MIMEMultipart()
-    msg["Subject"] = f"📦 Value Bet Monitor — Export picks_log ({now})"
-    msg["From"]    = GMAIL_USER
-    msg["To"]      = GMAIL_USER
-    msg.attach(MIMEText(
-        f"Export gerado em {now}.\n\nUsa este ficheiro para recalibrar o modelo.",
-        "plain"
-    ))
-
-    attachment = MIMEBase("application", "octet-stream")
-    attachment.set_payload(data)
-    encoders.encode_base64(attachment)
-    attachment.add_header("Content-Disposition", "attachment", filename="picks_log.json")
-    msg.attach(attachment)
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-            s.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            s.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
-        log.info("Export enviado por email")
-        send_telegram(f"📦 <b>Export enviado</b>\nFicheiro picks_log.json enviado para {GMAIL_USER}")
+        send_scan_summary(
+            scan_label=scan_label,
+            total_leagues=len({vb.league for vb in value_bets}),
+            total_games=len(value_bets),
+            elite=counts["Elite"],
+            strong=counts["Strong"],
+            value=counts["Value"],
+        )
     except Exception as e:
-        log.error(f"Erro no export: {e}")
-        send_telegram(f"⚠️ Erro no export: {e}")
+        logger.error(f"send_scan_summary: {e}")
+
+    logger.info(f"Scan: {new_alerts} novos alertas, {len(value_bets)} jogos analisados")
+
+
+def run_test():
+    try:
+        vbs = fetch_value_bets()
+    except Exception as e:
+        logger.error(f"{e}")
+        return
+    logger.info(f"TEST: {len(vbs)} value bets")
+    for vb in vbs[:10]:
+        logger.info(f"  {vb.level} {vb.game} | {vb.market} {vb.selection} @ {vb.odds_b365} (SBO={vb.odds_sbo}) edge={vb.edge_pct}%")
+
 
 if __name__ == "__main__":
-    run_monitor(
-        test_mode="--test" in sys.argv,
-        report_mode="--report" in sys.argv,
-        export_mode="--export" in sys.argv,
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test",   action="store_true")
+    parser.add_argument("--report", action="store_true")
+    parser.add_argument("--export", action="store_true")
+    args = parser.parse_args()
+
+    if args.test:    run_test()
+    elif args.report: send_weekly_report()
+    elif args.export: send_export()
+    else:             run_normal()

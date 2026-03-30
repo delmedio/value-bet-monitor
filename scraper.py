@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Optional
 
-from model import is_value_bet, MIN_KICKOFF_DATE, ev_level
+from model import is_value_bet, calc_dnb_odd, MIN_KICKOFF_DATE, ev_level
 
 logger = logging.getLogger(__name__)
 

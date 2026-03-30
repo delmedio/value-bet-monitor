@@ -1,476 +1,418 @@
 """
-alert.py — Alertas Telegram e report email semanal completo
-Report: semana actual (com picks) + histórico acumulado (só resumo por liga)
+alert.py — Alertas Telegram + Report semanal por email.
 """
 
 import os
+import json
 import smtplib
 import logging
-import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timezone, timedelta
 from collections import defaultdict
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
 
-log = logging.getLogger(__name__)
+import requests
 
-TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
-GMAIL_USER         = os.environ.get("GMAIL_USER", "")
+logger = logging.getLogger(__name__)
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+GMAIL_USER = os.environ.get("GMAIL_USER", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 
 
-# ── Telegram ──────────────────────────────────────────────────────────────────
+# ─── Telegram helpers ────────────────────────────────────────────────────────
 
-def send_telegram(text: str) -> bool:
+def _tg_send(text: str) -> None:
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return False
-    try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": text,
-                  "parse_mode": "HTML", "disable_web_page_preview": True},
-            timeout=10,
-        )
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        log.error(f"Erro Telegram: {e}")
-        return False
+        logger.warning("Telegram não configurado")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    resp = requests.post(url, json=payload, timeout=15)
+    resp.raise_for_status()
 
 
-
-# ── Conversão de linhas equivalentes ─────────────────────────────────────────
+# ─── Linhas equivalentes ─────────────────────────────────────────────────────
 
 def calc_dnb(home_odd: float, draw_odd: float) -> float | None:
-    """DNB home: se empate devolve, se home ganha ganhas."""
     try:
         p_home = 1 / home_odd
         p_draw = 1 / draw_odd
-        return round(1 / (p_home / (p_home + p_draw)), 2)
+        p_dnb = p_home / (p_home + (1 - p_home - p_draw))
+        if p_dnb <= 0 or p_dnb >= 1:
+            return None
+        return round(1 / p_dnb, 2)
     except Exception:
         return None
 
 
 def calc_ah025(home_odd: float, draw_odd: float) -> float | None:
-    """AH -0.25: split entre DNB (0.0) e home (-0.5)."""
     try:
         dnb = calc_dnb(home_odd, draw_odd)
-        if not dnb:
+        if dnb is None:
             return None
-        return round(2 / (1 / dnb + 1 / home_odd), 2)
+        # AH -0.25 ≈ split entre 0 e -0.5
+        ah0 = dnb
+        # p_0.5 ≈ (1/home_odd - 0.5*(1/draw_odd)) normalizado
+        p_home = 1 / home_odd
+        p_draw = 1 / draw_odd
+        p_away = 1 - p_home - p_draw
+        if p_away <= 0:
+            return None
+        p_half = p_home / (p_home + p_away)
+        ah05 = round(1 / p_half, 2)
+        return round(2 / (1 / ah0 + 1 / ah05), 2)
     except Exception:
         return None
 
 
-def calc_ou_quarter(main_odd: float, opposite_odd: float, direction: str) -> float | None:
-    """
-    Over/Under 2.25 ou Under 2.25 a partir da linha 2.5.
-    direction: 'over' ou 'under'
-    """
+def calc_ou_quarter_below(main_odd: float, opp_odd: float) -> float | None:
+    """Quarter line ABAIXO (ex: Over 2.5 → Over 2.25)."""
     try:
         p_main = 1 / main_odd
-        p_opp = 1 / opposite_odd
+        p_opp = 1 / opp_odd
         p_exact = 0.20 * p_opp
-        p_quarter = p_main + p_exact
-        quarter_odd = round(1 / p_quarter, 2)
-        # Quarter line = split entre main e um passo acima
-        result = round(2 / (1 / quarter_odd + 1 / main_odd), 2)
-        return result
+        p_below = p_main + p_exact
+        if p_below <= 0 or p_below >= 1:
+            return None
+        q_odd = round(1 / p_below, 2)
+        return round(2 / (1 / main_odd + 1 / q_odd), 2)
+    except Exception:
+        return None
+
+
+def calc_ou_quarter_above(main_odd: float, opp_odd: float) -> float | None:
+    """Quarter line ACIMA (ex: Over 2.5 → Over 2.75)."""
+    try:
+        p_main = 1 / main_odd
+        p_opp = 1 / opp_odd
+        p_exact = 0.20 * p_opp
+        p_above = p_main - p_exact
+        if p_above <= 0 or p_above >= 1:
+            return None
+        q_odd = round(1 / p_above, 2)
+        return round(2 / (1 / main_odd + 1 / q_odd), 2)
     except Exception:
         return None
 
 
 def format_equivalent_lines(market: str, selection: str,
                              opening_odd: float,
-                             odds_x: float | None = None,
-                             odds_over: float | None = None,
-                             odds_under: float | None = None) -> str:
-    """Gera as linhas equivalentes mínimas para o alerta."""
+                             odds_x: float | None = None) -> str:
     lines = []
 
-    if "Match Odds" in market:
-        # Precisa do empate para calcular DNB e AH -0.25
+    if market == "ML":
         if odds_x:
             dnb = calc_dnb(opening_odd, odds_x)
             ah025 = calc_ah025(opening_odd, odds_x)
-            team = selection
+            team = selection.split(" ")[0] if " " in selection else selection
             if dnb:
                 lines.append(f"• DNB {team}: {dnb:.2f}")
             if ah025:
                 lines.append(f"• AH {team} -0.25: {ah025:.2f}")
 
-    elif "Over/Under" in market:
-        if "Over" in selection and odds_under:
-            quarter = calc_ou_quarter(opening_odd, odds_under, "over")
-            line_val = selection.replace("Over ", "")
-            try:
-                lv = float(line_val)
-                new_lv = lv - 0.25
-                if quarter:
-                    lines.append(f"• Over {new_lv}: {quarter:.2f}")
-            except Exception:
-                pass
-        elif "Under" in selection and odds_over:
-            quarter = calc_ou_quarter(opening_odd, odds_over, "under")
-            line_val = selection.replace("Under ", "")
-            try:
-                lv = float(line_val)
-                new_lv = lv - 0.25
-                if quarter:
-                    lines.append(f"• Under {new_lv}: {quarter:.2f}")
-            except Exception:
-                pass
+    elif market == "Totals":
+        # Tenta extrair linha e tipo
+        parts = selection.split()
+        try:
+            direction = parts[0]  # Over ou Under
+            line = float(parts[1])
+            # Precisamos da odd oposta — aproximação com margem 1.90/1.90
+            opp_est = round(1 / (1 - 1 / opening_odd - 0.025), 2)
+            if direction == "Over":
+                qb = calc_ou_quarter_below(opening_odd, opp_est)
+                qa = calc_ou_quarter_above(opening_odd, opp_est)
+                if qb:
+                    lines.append(f"• Over {line - 0.25}: {qb:.2f}")
+                if qa:
+                    lines.append(f"• Over {line + 0.25}: {qa:.2f}")
+            else:
+                qb = calc_ou_quarter_below(opening_odd, opp_est)
+                qa = calc_ou_quarter_above(opening_odd, opp_est)
+                if qb:
+                    lines.append(f"• Under {line - 0.25}: {qb:.2f}")
+                if qa:
+                    lines.append(f"• Under {line + 0.25}: {qa:.2f}")
+        except Exception:
+            pass
+
+    elif market == "Spread":
+        parts = selection.rsplit(" ", 1)
+        try:
+            line = float(parts[-1])
+            team = parts[0] if len(parts) > 1 else selection
+            q_below_odd = round(opening_odd * 0.94, 2)
+            q_above_odd = round(opening_odd * 1.07, 2)
+            lines.append(f"• AH {team} {line - 0.25:+.2f}: ~{q_below_odd:.2f}")
+            lines.append(f"• AH {team} {line + 0.25:+.2f}: ~{q_above_odd:.2f}")
+        except Exception:
+            pass
 
     if not lines:
         return ""
     return "\n━━━━━━━━━━━━━━━━━━━━\nLinhas equivalentes mínimas:\n" + "\n".join(lines)
 
 
-def format_alert(game, league, kickoff, market, selection,
-                 opening_odd, fair_odd, min_odd, edge_pct, level,
-                 odds_x=None, odds_over=None, odds_under=None) -> str:
-    eq_lines = format_equivalent_lines(
-        market, selection, opening_odd,
-        odds_x=odds_x, odds_over=odds_over, odds_under=odds_under
+# ─── Alerta principal ─────────────────────────────────────────────────────────
+
+def send_alert(vb) -> None:
+    fair_display = f"~{vb.fair_odd}"
+    min_display = vb.min_odd
+
+    eq = format_equivalent_lines(
+        market=vb.market,
+        selection=vb.selection,
+        opening_odd=vb.odds_b365,
+        odds_x=vb.odds_x,
     )
-    return (
-        f"{level}\n"
+
+    href_line = f'\n🔗 <a href="{vb.bet_href}">Apostar na Bet365</a>' if vb.bet_href else ""
+
+    text = (
+        f"{vb.level}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🏟 <b>{game}</b>\n"
-        f"🏆 {league}\n"
-        f"⏰ {kickoff}\n"
+        f"🏟 {vb.game}\n"
+        f"🏆 {vb.league}\n"
+        f"⏰ {vb.kickoff}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 <b>{market}</b> — {selection}\n"
-        f"💰 1xBet: <b>{opening_odd:.3f}</b>\n"
-        f"⚖️ Fair: ~{fair_odd:.2f} | Mín: <b>{min_odd:.2f}</b>\n"
-        f"📈 Edge: <b>+{edge_pct:.1f}%</b> CLV esperado"
-        f"{eq_lines}"
+        f"📌 {vb.market} — {vb.selection}\n"
+        f"💰 Bet365: {vb.odds_b365:.3f}\n"
+        f"⚖️ Fair: {fair_display} | Mín: {min_display}\n"
+        f"📈 Edge: +{vb.ev_pct}% CLV esperado"
+        f"{href_line}"
+        f"{eq}"
     )
+    _tg_send(text)
+    logger.info(f"Alerta enviado: {vb.game} {vb.market} {vb.selection}")
 
 
-def format_scan_summary(total_games, value_bets, elite, strong, normal, leagues_scanned) -> str:
-    now = datetime.now(timezone.utc).strftime("%d/%m %H:%M UTC")
-    if value_bets == 0:
-        return (
-            f"🔍 <b>Scan {now}</b>\n"
-            f"Ligas: {leagues_scanned} | Jogos: {total_games}\n"
-            f"Sem value bets neste scan"
-        )
-    return (
-        f"📊 <b>Scan {now}</b>\n"
-        f"Ligas: {leagues_scanned} | Jogos: {total_games}\n"
-        f"🔥 Elite: {elite} | ✅ Strong: {strong} | 📊 Value: {normal}"
+def send_scan_summary(scan_label: str, total_leagues: int,
+                      total_games: int, elite: int,
+                      strong: int, value: int) -> None:
+    text = (
+        f"📊 Scan {scan_label}\n"
+        f"Ligas: {total_leagues} | Jogos: {total_games}\n"
+        f"🔥 Elite: {elite} | ✅ Strong: {strong} | 📊 Value: {value}"
     )
+    _tg_send(text)
 
 
-def send_test_message() -> bool:
-    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
-    return send_telegram(
-        f"✅ <b>Value Bet Monitor — Online</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Hora: {now}\n"
-        f"Modelo: Special One + Andrey2505 (703 picks)\n"
-        f"CLV médio esperado: +10.1% | Beat the line: 76%\n"
-        f"Threshold: Edge ≥ 10% | Silêncio: 00:00–08:00 UTC\n"
-        f"Ligas: 35 | Filtro: jogos ≥ 15 Abr 2026\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<i>Sistema a funcionar correctamente</i>"
-    )
+# ─── Report semanal ───────────────────────────────────────────────────────────
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _clv_badge(clv: float) -> str:
-    if clv >= 15: return "🔥"
-    if clv >= 8:  return "✅"
-    if clv >= 0:  return "📊"
-    return "❌"
-
-
-def _clv_color(clv: float) -> str:
-    return "#27ae60" if clv >= 0 else "#e74c3c"
-
-
-def _beat_color(pct: float) -> str:
-    if pct >= 65: return "#27ae60"
-    if pct >= 50: return "#e67e22"
-    return "#e74c3c"
-
-
-def _badge_class(pct: float) -> str:
-    if pct >= 65: return "background:#EAF3DE;color:#27500A"
-    if pct >= 50: return "background:#FAEEDA;color:#633806"
-    return "background:#FCEBEB;color:#791F1F"
-
-
-def _diagnosis(clv_medio: float, beat_pct: float, n: int) -> tuple[str, str]:
-    if n < 5:
-        return (
-            "⚠️ Amostra insuficiente",
-            "Precisamos de mais picks tracked para tirar conclusões. Continua a monitorizar."
-        )
-    if clv_medio >= 8 and beat_pct >= 65:
-        return (
-            "🟢 Modelo a funcionar bem",
-            "CLV positivo e beat the line acima de 65% confirmam value real. "
-            "Continua com os parâmetros actuais."
-        )
-    if clv_medio >= 5 and beat_pct >= 55:
-        return (
-            "🟡 Modelo aceitável — margem de melhoria",
-            "CLV abaixo do esperado (+10.1% histórico). "
-            "Considera aumentar o threshold de edge mínimo de 10% para 12%."
-        )
-    if clv_medio >= 0 and beat_pct >= 50:
-        return (
-            "🟠 Modelo neutro — requer atenção",
-            "CLV próximo de zero. Revê as ligas com CLV negativo e desactiva-as. "
-            "Aumenta o threshold para 13–15%."
-        )
-    return (
-        "🔴 Modelo com problemas — intervenção necessária",
-        "CLV negativo indica que as odds já estão corrigidas quando detectadas. "
-        "Recomendo pausar e recalibrar."
-    )
-
-
-def _diag_week_label(clv: float, beat: float, n: int) -> str:
-    if n < 3: return "⚪ Poucos dados"
-    if clv >= 8 and beat >= 65: return "🟢 Bom"
-    if clv >= 5 and beat >= 55: return "🟡 Aceitável"
-    if clv >= 0 and beat >= 50: return "🟠 Neutro"
-    return "🔴 Fraco"
-
-
-def _pick_row(pick) -> str:
-    if pick.clv_real is not None:
-        clv_str   = f"{pick.clv_real:+.1f}%"
-        close_str = f"{pick.pin_closing_odd:.3f}"
-        color     = _clv_color(pick.clv_real)
-        emoji     = _clv_badge(pick.clv_real)
-    else:
-        clv_str = close_str = "—"
-        color = "#888"
-        emoji = "⏳"
-    return f"""
-<tr style="border-bottom:0.5px solid #eee">
-  <td style="padding:7px 10px;font-size:12px">
-    {emoji} <b>{pick.game}</b><br>
-    <span style="color:#888;font-size:11px">{pick.league} · {pick.kickoff}</span>
-  </td>
-  <td style="padding:7px 10px;font-size:12px">{pick.market}<br>
-    <span style="color:#555">{pick.selection}</span></td>
-  <td style="padding:7px 10px;font-size:13px;text-align:center"><b>{pick.opening_odd:.3f}</b></td>
-  <td style="padding:7px 10px;font-size:13px;text-align:center;color:#777">{close_str}</td>
-  <td style="padding:7px 10px;font-size:13px;text-align:center;font-weight:bold;color:{color}">{clv_str}</td>
-</tr>"""
-
-
-def _league_table(by_league: dict) -> str:
-    rows = ""
-    sorted_leagues = sorted(
-        [(l, p) for l, p in by_league.items() if any(x.clv_real is not None for x in p)],
-        key=lambda x: sum(p.clv_real for p in x[1] if p.clv_real is not None) / max(sum(1 for p in x[1] if p.clv_real is not None), 1),
-        reverse=True
-    )
-    for league, picks in sorted_leagues:
+def _league_table_html(by_key: dict) -> str:
+    if not by_key:
+        return "<tr><td colspan='4' style='text-align:center;color:#888'>Sem dados esta semana</td></tr>"
+    rows = []
+    for key, picks in sorted(by_key.items(), key=lambda x: len(x[1]), reverse=True):
+        n = len(picks)
         tracked = [p for p in picks if p.clv_real is not None]
-        if not tracked: continue
-        clv_vals = [p.clv_real for p in tracked]
-        clv_med  = sum(clv_vals) / len(clv_vals)
-        beat     = sum(1 for c in clv_vals if c > 0)
-        beat_pct = beat / len(clv_vals) * 100
-        rows += f"""
-<tr style="border-bottom:0.5px solid #eee">
-  <td style="padding:7px 10px;font-size:13px"><b>{league}</b></td>
-  <td style="padding:7px 10px;font-size:13px;text-align:center">{len(tracked)}</td>
-  <td style="padding:7px 10px;font-size:13px;text-align:center;font-weight:bold;color:{_clv_color(clv_med)}">{clv_med:+.1f}%</td>
-  <td style="padding:7px 10px;font-size:13px;text-align:center">
-    <span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:500;{_badge_class(beat_pct)}">{beat}/{len(tracked)} ({beat_pct:.0f}%)</span>
-  </td>
-</tr>"""
-    return rows or '<tr><td colspan="4" style="padding:12px;color:#999;text-align:center;font-size:12px">Sem dados esta semana</td></tr>'
+        if tracked:
+            avg_clv = round(sum(p.clv_real for p in tracked) / len(tracked), 1)
+            btl = round(sum(1 for p in tracked if p.clv_real > 0) / len(tracked) * 100)
+            clv_str = f"+{avg_clv}%" if avg_clv > 0 else f"{avg_clv}%"
+            btl_str = f"{btl}%"
+        else:
+            clv_str = "Pendente"
+            btl_str = "—"
+        rows.append(
+            f"<tr><td>{key}</td><td style='text-align:center'>{n}</td>"
+            f"<td style='text-align:center'>{clv_str}</td>"
+            f"<td style='text-align:center'>{btl_str}</td></tr>"
+        )
+    return "\n".join(rows)
 
 
-def _history_section(weekly_stats: list) -> str:
-    if not weekly_stats:
-        return ""
-    weeks_html = ""
-    for week in weekly_stats:
-        label    = week["label"]
-        n        = week["n"]
-        clv_med  = week["clv_medio"]
-        beat_cnt = week["beat_count"]
-        beat_pct = week["beat_pct"]
-        by_league = week["by_league"]
-        diag_lbl = _diag_week_label(clv_med, beat_pct, n)
-        clv_col  = "#2ecc71" if clv_med >= 0 else "#e74c3c"
-        league_rows = _league_table(by_league)
-        weeks_html += f"""
-<div style="margin-bottom:14px;border:0.5px solid #ddd;border-radius:8px;overflow:hidden">
-  <div style="background:#2c3e50;padding:10px 14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-    <span style="color:white;font-weight:500;font-size:13px">📅 Semana {label}</span>
-    <span style="color:#ccc;font-size:12px">{n} picks</span>
-    <span style="font-weight:500;font-size:13px;color:{clv_col}">{clv_med:+.1f}% CLV</span>
-    <span style="color:#ccc;font-size:12px">{beat_cnt}/{n} beat ({beat_pct:.0f}%)</span>
-    <span style="color:#bdc3c7;font-size:11px">{diag_lbl}</span>
+def send_weekly_report() -> None:
+    from tracker import load_picks, Pick
+
+    picks = load_picks()
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+
+    # Picks desta semana
+    week_picks = []
+    for p in picks:
+        try:
+            dt = datetime.strptime(p.kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
+            if dt >= week_ago:
+                week_picks.append(p)
+        except Exception:
+            pass
+
+    total = len(week_picks)
+    tracked = [p for p in week_picks if p.clv_real is not None]
+    avg_clv = round(sum(p.clv_real for p in tracked) / len(tracked), 1) if tracked else None
+    btl_pct = round(sum(1 for p in tracked if p.clv_real > 0) / len(tracked) * 100) if tracked else None
+
+    # Diagnóstico
+    if avg_clv is None:
+        diag_icon = "⏳"
+        diag_msg = "Aguardar primeiros resultados tracked."
+    elif avg_clv >= 5 and btl_pct >= 55:
+        diag_icon = "🟢"
+        diag_msg = "Modelo a funcionar bem. Manter threshold."
+    elif avg_clv >= 2 or btl_pct >= 50:
+        diag_icon = "🟡"
+        diag_msg = "Resultado aceitável. Continuar a monitorizar."
+    elif avg_clv >= 0:
+        diag_icon = "🟠"
+        diag_msg = "CLV positivo mas fraco. Considerar aumentar threshold."
+    else:
+        diag_icon = "🔴"
+        diag_msg = "CLV negativo. Rever calibração."
+
+    # Tabelas
+    by_league = defaultdict(list)
+    by_market = defaultdict(list)
+    for p in week_picks:
+        by_league[p.league].append(p)
+        mkt_label = {"ML": "Match Odds", "Spread": "Asian Handicap", "Totals": "Over/Under"}.get(p.market, p.market)
+        by_market[mkt_label].append(p)
+
+    league_rows = _league_table_html(dict(by_league))
+    market_rows = _league_table_html(dict(by_market))
+
+    # Detalhe por jogo
+    picks_rows = ""
+    for p in sorted(week_picks, key=lambda x: x.kickoff):
+        closing = f"{p.closing_odd_sbo:.3f}" if p.closing_odd_sbo else "Pendente"
+        clv_str = (f"+{p.clv_real}%" if p.clv_real and p.clv_real > 0
+                   else f"{p.clv_real}%" if p.clv_real is not None else "—")
+        mkt_label = {"ML": "Match Odds", "Spread": "AH", "Totals": "OU"}.get(p.market, p.market)
+        picks_rows += (
+            f"<tr><td>{p.game}</td><td>{mkt_label} {p.selection}</td>"
+            f"<td style='text-align:center'>{p.opening_odd:.3f}</td>"
+            f"<td style='text-align:center'>{closing}</td>"
+            f"<td style='text-align:center'>{clv_str}</td></tr>\n"
+        )
+
+    # Histórico acumulado
+    all_tracked = [p for p in picks if p.clv_real is not None]
+    total_tracked = len(all_tracked)
+    overall_clv = round(sum(p.clv_real for p in all_tracked) / total_tracked, 1) if all_tracked else None
+    overall_btl = round(sum(1 for p in all_tracked if p.clv_real > 0) / total_tracked * 100) if all_tracked else None
+
+    clv_val = f"+{avg_clv}%" if avg_clv and avg_clv > 0 else (f"{avg_clv}%" if avg_clv is not None else "—")
+    btl_val = f"{btl_pct}%" if btl_pct is not None else "—"
+    overall_clv_str = f"+{overall_clv}%" if overall_clv and overall_clv > 0 else (f"{overall_clv}%" if overall_clv is not None else "—")
+    overall_btl_str = f"{overall_btl}%" if overall_btl is not None else "—"
+    week_str = now.strftime("%d/%m/%Y")
+
+    css = """
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f7fa;margin:0;padding:20px}
+    .container{max-width:700px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+    .header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:28px 32px;color:#fff}
+    .header h1{margin:0;font-size:20px;font-weight:600}
+    .header p{margin:6px 0 0;opacity:.7;font-size:13px}
+    .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid #eee}
+    .kpi{padding:18px 16px;text-align:center;border-right:1px solid #eee}
+    .kpi:last-child{border-right:none}
+    .kpi-value{font-size:22px;font-weight:700;color:#1a1a2e}
+    .kpi-label{font-size:11px;color:#888;margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+    .section{padding:20px 28px}
+    h2{font-size:14px;font-weight:600;margin:0 0 12px;color:#1a1a2e;padding-bottom:6px;border-bottom:2px solid #f0f0f0}
+    .diag{display:flex;align-items:flex-start;gap:10px;padding:12px 16px;background:#f8f9fa;border-radius:8px;margin-bottom:16px;font-size:13px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{background:#f8f9fa;padding:8px 10px;text-align:left;color:#555;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+    td{padding:8px 10px;border-bottom:1px solid #f0f0f0;color:#333}
+    tr:last-child td{border-bottom:none}
+    .footer{padding:16px 28px;background:#f8f9fa;text-align:center;font-size:11px;color:#aaa}
+    """
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{css}</style></head><body>
+<div class="container">
+  <div class="header">
+    <h1>📊 Value Bet Monitor — Report Semanal</h1>
+    <p>Semana até {week_str} · Odds: Bet365 abertura · CLV: SBObet fecho</p>
   </div>
-  <table style="width:100%;border-collapse:collapse">
-    <thead><tr style="background:#f5f5f5">
-      <th style="padding:6px 10px;text-align:left;font-size:11px;color:#666">Liga</th>
-      <th style="padding:6px 10px;text-align:center;font-size:11px;color:#666">Picks</th>
-      <th style="padding:6px 10px;text-align:center;font-size:11px;color:#666">CLV médio</th>
-      <th style="padding:6px 10px;text-align:center;font-size:11px;color:#666">Beat the line</th>
-    </tr></thead>
-    <tbody>{league_rows}</tbody>
-  </table>
-</div>"""
-    return f"""
-<div style="margin-top:28px">
-  <h2 style="font-size:15px;font-weight:500;margin:0 0 12px;padding-bottom:6px;border-bottom:2px solid #2c3e50">
-    📚 Histórico acumulado por semana
-  </h2>
-  {weeks_html}
-</div>"""
-
-
-# ── Report semanal ────────────────────────────────────────────────────────────
-
-def send_weekly_report(days: int = 7) -> bool:
-    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-        log.error("Gmail não configurado")
-        return False
-
-    from tracker import get_picks_for_report, get_all_weekly_stats, get_cumulative_stats
-    data         = get_picks_for_report(days=days)
-    weekly_stats = get_all_weekly_stats()
-    cumulative   = get_cumulative_stats()
-
-    now    = datetime.now(timezone.utc)
-    period = f"{(now - timedelta(days=days)).strftime('%d/%m')} a {now.strftime('%d/%m/%Y')}"
-    subject = f"📊 Value Bet Report — {period} ({data['total_picks']} picks)"
-
-    clv_med    = data["clv_medio"]
-    beat_pct   = data["beat_line_pct"]
-    beat_count = data["beat_line_count"]
-    n_tracked  = data["total_tracked"]
-    diag, rec  = _diagnosis(clv_med, beat_pct, n_tracked)
-
-    all_picks   = sorted(data["tracked"] + data["pending"], key=lambda p: p.kickoff_ts, reverse=True)
-    picks_rows  = "".join(_pick_row(p) for p in all_picks)
-    pending_note = (
-        f"<p style='color:#888;font-size:12px;margin-top:8px'>"
-        f"⏳ {len(data['pending'])} pick(s) pendentes — fecho ainda não disponível.</p>"
-    ) if data["pending"] else ""
-
-    by_league_week: dict = defaultdict(list)
-    by_market_week: dict = defaultdict(list)
-    for p in data["tracked"]:
-        by_league_week[p.league].append(p)
-        by_market_week[p.market].append(p)
-    league_rows_week = _league_table(dict(by_league_week))
-    market_rows_week = _league_table(dict(by_market_week))
-
-    history_html = _history_section(weekly_stats)
-
-    cum_n    = cumulative["n"]
-    cum_clv  = cumulative["clv_medio"]
-    cum_beat = cumulative["beat_pct"]
-    clv_disp = f"{clv_med:+.1f}%" if n_tracked > 0 else "—"
-    beat_disp = f"{beat_pct:.0f}%" if n_tracked > 0 else "—"
-
-    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>
-body{{font-family:Arial,sans-serif;max-width:720px;margin:0 auto;color:#222;font-size:13px}}
-table{{width:100%;border-collapse:collapse}}
-th{{background:#f0f0f0;padding:7px 10px;text-align:left;font-size:11px;color:#555;font-weight:600}}
-</style></head><body>
-
-<div style="background:#1a1a2e;color:white;padding:18px 22px;border-radius:8px 8px 0 0">
-  <h1 style="margin:0;font-size:18px;font-weight:500;color:white">🎯 Value Bet Monitor — Report Semanal</h1>
-  <p style="margin:3px 0 0;font-size:12px;color:#aaa">{period}</p>
-</div>
-
-<div style="padding:14px 0">
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
-    <div style="background:#f8f9fa;border-radius:8px;padding:10px 12px;text-align:center">
-      <div style="font-size:20px;font-weight:500">{data['total_picks']}</div>
-      <div style="font-size:10px;color:#888;margin-top:2px;text-transform:uppercase">Picks semana</div>
-    </div>
-    <div style="background:#f8f9fa;border-radius:8px;padding:10px 12px;text-align:center">
-      <div style="font-size:20px;font-weight:500;color:{_clv_color(clv_med)}">{clv_disp}</div>
-      <div style="font-size:10px;color:#888;margin-top:2px;text-transform:uppercase">CLV médio</div>
-    </div>
-    <div style="background:#f8f9fa;border-radius:8px;padding:10px 12px;text-align:center">
-      <div style="font-size:20px;font-weight:500">{beat_disp}</div>
-      <div style="font-size:10px;color:#888;margin-top:2px;text-transform:uppercase">Beat the line</div>
-    </div>
-    <div style="background:#f8f9fa;border-radius:8px;padding:10px 12px;text-align:center">
-      <div style="font-size:20px;font-weight:500">{beat_count}/{n_tracked}</div>
-      <div style="font-size:10px;color:#888;margin-top:2px;text-transform:uppercase">Tracked</div>
-    </div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-value">{total}</div><div class="kpi-label">Picks</div></div>
+    <div class="kpi"><div class="kpi-value">{len(tracked)}</div><div class="kpi-label">Tracked</div></div>
+    <div class="kpi"><div class="kpi-value">{clv_val}</div><div class="kpi-label">CLV médio</div></div>
+    <div class="kpi"><div class="kpi-value">{btl_val}</div><div class="kpi-label">Beat the line</div></div>
   </div>
-
-  <div style="background:#f8f9fa;border-left:3px solid #3498db;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:14px">
-    <div style="font-weight:500;font-size:13px;margin-bottom:4px">{diag}</div>
-    <div style="font-size:12px;color:#555;line-height:1.5">{rec}</div>
+  <div class="section">
+    <div class="diag"><span style="font-size:20px">{diag_icon}</span><span>{diag_msg}</span></div>
+    <h2>📊 CLV por liga — esta semana</h2>
+    <table>
+      <thead><tr><th>Liga</th><th>Picks</th><th style="text-align:center">CLV médio</th><th style="text-align:center">Beat the line</th></tr></thead>
+      <tbody>{league_rows}</tbody>
+    </table>
   </div>
-
-  <div style="background:#EAF3DE;border-radius:8px;padding:10px 16px;display:flex;gap:24px;margin-bottom:16px">
-    <div><div style="font-size:18px;font-weight:500;color:#27500A">{cum_n}</div><div style="font-size:10px;color:#3B6D11;text-transform:uppercase">Total histórico</div></div>
-    <div><div style="font-size:18px;font-weight:500;color:{_clv_color(cum_clv)}">{cum_clv:+.1f}%</div><div style="font-size:10px;color:#3B6D11;text-transform:uppercase">CLV acumulado</div></div>
-    <div><div style="font-size:18px;font-weight:500;color:#27500A">{cum_beat:.0f}%</div><div style="font-size:10px;color:#3B6D11;text-transform:uppercase">Beat acumulado</div></div>
+  <div class="section">
+    <h2>📌 CLV por mercado — esta semana</h2>
+    <table>
+      <thead><tr><th>Mercado</th><th>Picks</th><th style="text-align:center">CLV médio</th><th style="text-align:center">Beat the line</th></tr></thead>
+      <tbody>{market_rows}</tbody>
+    </table>
   </div>
-
-  <h2 style="font-size:14px;font-weight:500;margin:16px 0 8px;padding-bottom:5px;border-bottom:1.5px solid #eee">
-    📊 CLV por liga — esta semana
-  </h2>
-  <table>
-    <thead><tr><th>Liga</th><th>Picks</th><th style="text-align:center">CLV médio</th><th style="text-align:center">Beat the line</th></tr></thead>
-    <tbody>{league_rows_week}</tbody>
-  </table>
-
-  <h2 style="font-size:14px;font-weight:500;margin:16px 0 8px;padding-bottom:5px;border-bottom:1.5px solid #eee">
-    📌 CLV por mercado — esta semana
-  </h2>
-  <table>
-    <thead><tr><th>Mercado</th><th>Picks</th><th style="text-align:center">CLV médio</th><th style="text-align:center">Beat the line</th></tr></thead>
-    <tbody>{market_rows_week}</tbody>
-  </table>
-
-  <h2 style="font-size:14px;font-weight:500;margin:20px 0 8px;padding-bottom:5px;border-bottom:1.5px solid #eee">
-    🎯 Detalhe por jogo — esta semana
-  </h2>
-  <table>
-    <thead><tr><th>Jogo</th><th>Mercado</th><th style="text-align:center">Abertura</th><th style="text-align:center">Fecho PIN</th><th style="text-align:center">CLV real</th></tr></thead>
-    <tbody>{picks_rows}</tbody>
-  </table>
-  {pending_note}
-
-  {history_html}
-
-</div>
-
-<div style="margin-top:20px;font-size:10px;color:#aaa;text-align:center;padding-top:10px;border-top:0.5px solid #eee">
-  Modelo calibrado com 703 picks · Special One + Andrey2505 · CLV esperado: +10.1% · Beat the line histórico: 76%
+  <div class="section">
+    <h2>🎯 Detalhe por jogo — esta semana</h2>
+    <table>
+      <thead><tr><th>Jogo</th><th>Mercado</th><th style="text-align:center">Abertura</th><th style="text-align:center">Fecho SBO</th><th style="text-align:center">CLV real</th></tr></thead>
+      <tbody>{picks_rows or "<tr><td colspan='5' style='text-align:center;color:#888'>Sem dados esta semana</td></tr>"}</tbody>
+    </table>
+  </div>
+  <div class="section">
+    <h2>📈 Histórico acumulado</h2>
+    <table>
+      <thead><tr><th>Picks totais tracked</th><th style="text-align:center">CLV médio total</th><th style="text-align:center">Beat the line total</th></tr></thead>
+      <tbody><tr>
+        <td style="text-align:center">{total_tracked}</td>
+        <td style="text-align:center">{overall_clv_str}</td>
+        <td style="text-align:center">{overall_btl_str}</td>
+      </tr></tbody>
+    </table>
+  </div>
+  <div class="footer">Value Bet Monitor · gerado automaticamente</div>
 </div>
 </body></html>"""
 
+    _send_email(
+        subject=f"📊 Value Bet Report — {week_str}",
+        html_body=html,
+    )
+    logger.info("Report semanal enviado")
+
+
+def _send_email(subject: str, html_body: str) -> None:
+    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
+        logger.warning("Gmail não configurado")
+        return
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = GMAIL_USER
-    msg["To"]      = GMAIL_USER
-    msg.attach(MIMEText(html, "html"))
+    msg["From"] = GMAIL_USER
+    msg["To"] = GMAIL_USER
+    msg.attach(MIMEText(html_body, "html"))
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
 
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-            s.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            s.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
-        log.info(f"Report enviado para {GMAIL_USER}")
-        return True
-    except Exception as e:
-        log.error(f"Erro email: {e}")
-        return False
 
+def send_export() -> None:
+    from tracker import load_picks
+    picks = load_picks()
+    import json as _json
+    data = _json.dumps([{
+        "pick_id": p.pick_id,
+        "game": p.game,
+        "league": p.league,
+        "market": p.market,
+        "selection": p.selection,
+        "kickoff": p.kickoff,
+        "opening_odd": p.opening_odd,
+        "ev_pct": p.ev_pct,
+        "closing_odd_sbo": p.closing_odd_sbo,
+        "clv_real": p.clv_real,
+    } for p in picks], indent=2)
+    _send_email(
+        subject="📦 Value Bet Monitor — Export picks_log",
+        html_body=f"<pre style='font-family:monospace;font-size:12px'>{data}</pre>",
+    )

@@ -297,26 +297,82 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     return best_vb
 
 
-def fetch_events() -> list[dict]:
-    all_events = []
-    page = 1
-    while True:
-        data = _get("/events", {"sport": "football", "bookmaker": "Bet365",
-                                "limit": 100, "page": page})
+# Slugs das ligas que nos interessam (mapeamento nome → slug da API)
+LEAGUE_SLUGS = [
+    "portugal-liga-portugal",
+    "portugal-liga-portugal-2",
+    "spain-laliga",
+    "spain-laliga-2",
+    "england-premier-league",
+    "england-championship",
+    "england-league-one",
+    "england-league-two",
+    "italy-serie-a",
+    "italy-serie-b",
+    "germany-bundesliga",
+    "germany-2-bundesliga",
+    "france-ligue-1",
+    "france-ligue-2",
+    "netherlands-eredivisie",
+    "scotland-premiership",
+    "scotland-championship",
+    "belgium-pro-league",
+    "greece-super-league",
+    "norway-eliteserien",
+    "sweden-allsvenskan",
+    "denmark-superliga",
+    "finland-veikkausliiga",
+    "switzerland-super-league",
+    "austria-bundesliga",
+    "turkiye-super-lig",
+    "poland-ekstraklasa",
+    "romania-superliga",
+    "russia-premier-league",
+    "serbia-superliga",
+    "international-clubs-uefa-champions-league",
+    "international-clubs-uefa-europa-league",
+    "international-clubs-uefa-conference-league",
+    "brazil-brasileiro-serie-a",
+    "brazil-brasileiro-serie-b",
+    "argentina-liga-profesional",
+    "international-clubs-copa-libertadores",
+    "international-clubs-copa-sudamericana",
+    "mexico-liga-mx-clausura",
+    "usa-mls",
+    "international-world-cup",
+    "japan-jleague",
+    "republic-of-korea-k-league-1",
+    "australia-a-league",
+    "china-chinese-super-league",
+]
+
+
+def fetch_events_for_league(slug: str) -> list[dict]:
+    """Busca eventos de uma liga específica pelo slug."""
+    try:
+        data = _get("/events", {
+            "sport": "football",
+            "league": slug,
+            "bookmaker": "Bet365",
+            "limit": 100,
+        })
         if isinstance(data, list):
-            if not data:
-                break
-            all_events.extend(data)
-            if len(data) < 100:
-                break
-            page += 1
+            return data
         elif isinstance(data, dict):
-            items = data.get("data", data.get("events", []))
-            all_events.extend(items)
-            break
-        else:
-            break
-    logger.info(f"fetch_events: {len(all_events)} eventos")
+            return data.get("data", data.get("events", []))
+    except Exception as e:
+        logger.warning(f"fetch_events_for_league {slug}: {e}")
+    return []
+
+
+def fetch_events() -> list[dict]:
+    """Busca eventos apenas das ligas alvo, uma a uma."""
+    all_events = []
+    for slug in LEAGUE_SLUGS:
+        events = fetch_events_for_league(slug)
+        all_events.extend(events)
+        logger.debug(f"  {slug}: {len(events)} eventos")
+    logger.info(f"fetch_events: {len(all_events)} eventos nas ligas alvo")
     return all_events
 
 

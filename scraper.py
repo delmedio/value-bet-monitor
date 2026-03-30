@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Optional
 
-from model import is_value_bet, calc_dnb_odd, MIN_KICKOFF_DATE, ev_level
+from model import is_value_bet, MIN_KICKOFF_DATE, ev_level
 
 logger = logging.getLogger(__name__)
 
@@ -225,74 +225,56 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     best_edge = 0.0
     best_vb: Optional[ValueBet] = None
 
-    # ── Análise unificada: ML → DNB → AH alternativo → melhor linha no range ──
-    # Objectivo: encontrar a melhor odd dentro do range calibrado (1.50-2.80)
-    # Prioridade: linha que está no range E tem maior edge
+    # Analise unificada: melhor linha no range calibrado
+    # 1. AH principal (Spread) - linha mais eficiente
+    # 2. Draw No Bet real da API - mais preciso que calculo
+    # 3. ML directo - se dentro do range
     b_ml  = b365.get("ML", {})
     b_ah  = b365.get("Spread", {})
-    b_alt = b365.get("Alternative Asian Handicap", {})
+    b_dnb = b365.get("Draw No Bet", {})
     sbo_ml = sbo.get("ML", {})
     sbo_ah = sbo.get("Spread", {})
 
     draw_odd = _float(b_ml.get("draw")) or None
     href_ml  = b_ml.get("href", "")
     href_ah  = b_ah.get("href", "")
+    href_dnb = b_dnb.get("href", href_ml)
 
     for side, team in [("home", home), ("away", away)]:
-        # Constrói lista de candidatos: [(odd, market, selection, hdp, href, sbo_odd)]
         candidates = []
 
-        # 1. ML directo
-        ml_odd = _float(b_ml.get(side))
-        if ml_odd:
-            sbo_odd = _float(sbo_ml.get(side)) or None
-            candidates.append((ml_odd, "ML", team, None, href_ml, sbo_odd, draw_odd))
-
-        # 2. DNB (calculado a partir do ML + empate)
-        if ml_odd and draw_odd:
-            dnb = calc_dnb_odd(ml_odd, draw_odd)
-            if dnb:
-                # SBO DNB = SBO ML normalizado (aproximação)
-                sbo_dnb = None  # SBO não tem DNB directo
-                candidates.append((dnb, "DNB", team, None, href_ml, sbo_dnb, None))
-
-        # 3. AH principal
+        # 1. AH principal (Spread)
         ah_odd = _float(b_ah.get(side))
         ah_hdp = _float(b_ah.get("hdp") or 0)
         if ah_odd:
             sbo_odd = _float(sbo_ah.get(side)) or None
             sign = f"{ah_hdp:+.2f}" if ah_hdp != 0 else ""
             candidates.append((ah_odd, "Spread", f"{team} {sign}".strip(),
-                                ah_hdp, href_ah, sbo_odd, None))
+                                ah_hdp, href_ah, sbo_odd))
 
-        # 4. Linhas AH alternativas (Alternative Asian Handicap)
-        alt_odds_list = b_alt.get("odds", []) if isinstance(b_alt, dict) else []
-        for alt in alt_odds_list:
-            alt_odd = _float(alt.get(side))
-            alt_hdp = _float(alt.get("hdp") or 0)
-            if alt_odd:
-                sign = f"{alt_hdp:+.2f}" if alt_hdp != 0 else ""
-                candidates.append((alt_odd, "Spread", f"{team} {sign}".strip(),
-                                    alt_hdp, b_alt.get("href", href_ah), None, None))
+        # 2. Draw No Bet real da API
+        dnb_odd = _float(b_dnb.get(side))
+        if dnb_odd:
+            candidates.append((dnb_odd, "DNB", team, None, href_dnb, None))
 
-        # Avalia cada candidato — escolhe o de maior edge que:
-        # a) está no range calibrado
-        # b) SBO ainda não abriu (early bet)
-        for odd, mkt, sel, hdp_val, href, sbo_odd, dx in candidates:
-            # Só early bets — se SBO já tem odds, ignora
+        # 3. ML directo
+        ml_odd = _float(b_ml.get(side))
+        if ml_odd:
+            sbo_odd = _float(sbo_ml.get(side)) or None
+            candidates.append((ml_odd, "ML", team, None, href_ml, sbo_odd))
+
+        # Escolhe maior edge com SBO fechada
+        for odd, mkt, sel, hdp_val, href, sbo_odd in candidates:
             if sbo_odd is not None:
                 continue
-
-            result = is_value_bet(odd, draw_odd=dx)
+            result = is_value_bet(odd)
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
-                display_odd = odd  # para DNB, odd já é a odd calculada
-                sel_display = sel  # market="DNB" já identifica o tipo; sel é o nome da equipa
                 best_vb = ValueBet(
                     game=game, home_team=home, away_team=away,
                     league=league, kickoff=kickoff,
-                    market=mkt, selection=sel_display,
-                    odds_b365=display_odd,
+                    market=mkt, selection=sel,
+                    odds_b365=odd,
                     fair_odd=result["fair_odd"],
                     min_odd=result["min_odd"],
                     edge_pct=result["edge_pct"],
@@ -301,46 +283,9 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
                     hdp=hdp_val,
                     odds_x=draw_odd if mkt in ("ML", "DNB") else None,
                     bet_href=href,
-                    odds_sbo=sbo_odd,
+                    odds_sbo=None,
                 )
 
-    # ── Over/Under (Totals) ───────────────────────────────────────────────────
-    b_ou = b365.get("Totals", {})
-    if b_ou:
-        line = _float(b_ou.get("max") or b_ou.get("hdp") or 0)
-        over_odd  = _float(b_ou.get("over") or b_ou.get("home"))
-        under_odd = _float(b_ou.get("under") or b_ou.get("away"))
-        sbo_ou = sbo.get("Totals", {})
-
-        for direction, odd, opp in [
-            ("Over",  over_odd,  under_odd),
-            ("Under", under_odd, over_odd),
-        ]:
-            result = is_value_bet(odd)
-            if result and result["edge_pct"] > best_edge:
-                sbo_key = ("over" if direction == "Over" else "under")
-                odds_sbo = _float(sbo_ou.get(sbo_key) or sbo_ou.get("home" if direction == "Over" else "away")) or None
-
-                # Se SBO já abriu → não é early bet, ignora
-                if odds_sbo is not None:
-                    continue
-
-                best_edge = result["edge_pct"]
-                best_vb = ValueBet(
-                    game=game, home_team=home, away_team=away,
-                    league=league, kickoff=kickoff,
-                    market="Totals", selection=f"{direction} {line}",
-                    odds_b365=odd,
-                    fair_odd=result["fair_odd"],
-                    min_odd=result["min_odd"],
-                    edge_pct=result["edge_pct"],
-                    level=result["level"],
-                    event_id=event_id, line=line, opp_odd=opp,
-                    bet_href=b_ou.get("href", ""),
-                    odds_sbo=odds_sbo,
-                )
-
-    return best_vb
 
 
 # Slugs das ligas que nos interessam (mapeamento nome → slug da API)

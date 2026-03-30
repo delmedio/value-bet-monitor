@@ -217,55 +217,82 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     best_edge = 0.0
     best_vb: Optional[ValueBet] = None
 
-    # ── Match Odds (ML) ──────────────────────────────────────────────────────
-    b_ml = b365.get("ML", {})
-    if b_ml:
-        for side, team in [("home", home), ("away", away)]:
-            odd = _float(b_ml.get(side))
-            result = is_value_bet(odd)
+    # ── Análise unificada: ML → DNB → AH alternativo → melhor linha no range ──
+    # Objectivo: encontrar a melhor odd dentro do range calibrado (1.50-2.80)
+    # Prioridade: linha que está no range E tem maior edge
+    b_ml  = b365.get("ML", {})
+    b_ah  = b365.get("Spread", {})
+    b_alt = b365.get("Alternative Asian Handicap", {})
+    sbo_ml = sbo.get("ML", {})
+    sbo_ah = sbo.get("Spread", {})
+
+    draw_odd = _float(b_ml.get("draw")) or None
+    href_ml  = b_ml.get("href", "")
+    href_ah  = b_ah.get("href", "")
+
+    for side, team in [("home", home), ("away", away)]:
+        # Constrói lista de candidatos: [(odd, market, selection, hdp, href, sbo_odd)]
+        candidates = []
+
+        # 1. ML directo
+        ml_odd = _float(b_ml.get(side))
+        if ml_odd:
+            sbo_odd = _float(sbo_ml.get(side)) or None
+            candidates.append((ml_odd, "ML", team, None, href_ml, sbo_odd, draw_odd))
+
+        # 2. DNB (calculado a partir do ML + empate)
+        if ml_odd and draw_odd:
+            dnb = calc_dnb_odd(ml_odd, draw_odd)
+            if dnb:
+                # SBO DNB = SBO ML normalizado (aproximação)
+                sbo_dnb = None  # SBO não tem DNB directo
+                candidates.append((dnb, "DNB", f"DNB {team}", None, href_ml, sbo_dnb, None))
+
+        # 3. AH principal
+        ah_odd = _float(b_ah.get(side))
+        ah_hdp = _float(b_ah.get("hdp") or 0)
+        if ah_odd:
+            sbo_odd = _float(sbo_ah.get(side)) or None
+            sign = f"{ah_hdp:+.2f}" if ah_hdp != 0 else ""
+            candidates.append((ah_odd, "Spread", f"{team} {sign}".strip(),
+                                ah_hdp, href_ah, sbo_odd, None))
+
+        # 4. Linhas AH alternativas (Alternative Asian Handicap)
+        alt_odds_list = b_alt.get("odds", []) if isinstance(b_alt, dict) else []
+        for alt in alt_odds_list:
+            alt_odd = _float(alt.get(side))
+            alt_hdp = _float(alt.get("hdp") or 0)
+            if alt_odd:
+                sign = f"{alt_hdp:+.2f}" if alt_hdp != 0 else ""
+                candidates.append((alt_odd, "Spread", f"{team} {sign}".strip(),
+                                    alt_hdp, b_alt.get("href", href_ah), None, None))
+
+        # Avalia cada candidato — escolhe o de maior edge que:
+        # a) está no range calibrado
+        # b) SBO ainda não abriu (early bet)
+        for odd, mkt, sel, hdp_val, href, sbo_odd, dx in candidates:
+            # Só early bets — se SBO já tem odds, ignora
+            if sbo_odd is not None:
+                continue
+
+            result = is_value_bet(odd, draw_odd=dx)
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
-                sbo_ml = sbo.get("ML", {})
-                odds_sbo = _float(sbo_ml.get(side)) or None
+                display_odd = result.get("dnb_odd", odd) if mkt == "DNB" else odd
                 best_vb = ValueBet(
                     game=game, home_team=home, away_team=away,
                     league=league, kickoff=kickoff,
-                    market="ML", selection=team,
-                    odds_b365=odd,
+                    market=mkt, selection=sel,
+                    odds_b365=display_odd,
                     fair_odd=result["fair_odd"],
                     min_odd=result["min_odd"],
                     edge_pct=result["edge_pct"],
                     level=result["level"],
                     event_id=event_id,
-                    odds_x=_float(b_ml.get("draw")) or None,
-                    bet_href=b_ml.get("href", ""),
-                    odds_sbo=odds_sbo,
-                )
-
-    # ── Asian Handicap (Spread) ──────────────────────────────────────────────
-    b_ah = b365.get("Spread", {})
-    if b_ah:
-        hdp = _float(b_ah.get("hdp") or 0)
-        for side, team in [("home", home), ("away", away)]:
-            odd = _float(b_ah.get(side))
-            result = is_value_bet(odd)
-            if result and result["edge_pct"] > best_edge:
-                best_edge = result["edge_pct"]
-                sbo_ah = sbo.get("Spread", {})
-                odds_sbo = _float(sbo_ah.get(side)) or None
-                sign = f"{hdp:+.2f}" if hdp != 0 else ""
-                best_vb = ValueBet(
-                    game=game, home_team=home, away_team=away,
-                    league=league, kickoff=kickoff,
-                    market="Spread", selection=f"{team} {sign}".strip(),
-                    odds_b365=odd,
-                    fair_odd=result["fair_odd"],
-                    min_odd=result["min_odd"],
-                    edge_pct=result["edge_pct"],
-                    level=result["level"],
-                    event_id=event_id, hdp=hdp,
-                    bet_href=b_ah.get("href", ""),
-                    odds_sbo=odds_sbo,
+                    hdp=hdp_val,
+                    odds_x=draw_odd if mkt in ("ML", "DNB") else None,
+                    bet_href=href,
+                    odds_sbo=sbo_odd,
                 )
 
     # ── Over/Under (Totals) ───────────────────────────────────────────────────
@@ -282,9 +309,14 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
         ]:
             result = is_value_bet(odd)
             if result and result["edge_pct"] > best_edge:
-                best_edge = result["edge_pct"]
                 sbo_key = ("over" if direction == "Over" else "under")
                 odds_sbo = _float(sbo_ou.get(sbo_key) or sbo_ou.get("home" if direction == "Over" else "away")) or None
+
+                # Se SBO já abriu → não é early bet, ignora
+                if odds_sbo is not None:
+                    continue
+
+                best_edge = result["edge_pct"]
                 best_vb = ValueBet(
                     game=game, home_team=home, away_team=away,
                     league=league, kickoff=kickoff,

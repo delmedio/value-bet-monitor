@@ -1,26 +1,35 @@
 """
-model.py — Modelo de calibração com factor contínuo para 1xBet
-Base: Special One (182 picks) + Andrey2505 (521 picks Bet365)
-Ajuste: +2% para compensar margem menor do 1xBet (~3.5% vs ~5.5% Bet365)
+model.py — Modelo de calibração para detecção de early value bets.
 
-Factor contínuo (regressão linear): factor = 0.9927 - 0.0605 * odd
-Isto dá edges diferenciados por odd em vez de iguais dentro de um range.
+Objectivo: estimar a fair odd de uma aposta na Bet365 ANTES de a SBObet
+ter uma linha estabelecida (early bet). O CLV real é apurado depois quando
+a SBObet abre e fecha.
 
-Threshold: 10% — calibrado com diferença real observada
+Calibrado com 703 picks reais (Special One 182 + Andrey2505 521 Bet365).
+Factor contínuo: factor = 0.9927 - 0.0605 * odd
+Range: 1.50 – 3.50 | Threshold: edge >= 5%
 """
 
-MIN_EDGE_PCT = 10.0
-MIN_ODD = 1.70
-MAX_ODD = 2.50
+MIN_EDGE_PCT     = 5.0    # Edge mínimo para alertar
+MIN_ODD          = 1.50   # Odd mínima Bet365
+MAX_ODD          = 3.50   # Odd máxima Bet365
 MIN_KICKOFF_DATE = "2026-04-15"
 
 
 def get_calibration_factor(odd: float) -> float:
-    """Factor contínuo — decresce à medida que a odd sobe."""
+    """
+    Factor contínuo calibrado com dados reais.
+    Quanto maior a odd, menor o factor (mercados de odds mais altas
+    têm maior margem na Bet365).
+    """
     return round(0.9927 - 0.0605 * odd, 4)
 
 
 def estimate_fair_odd(opening_odd: float) -> float | None:
+    """
+    Estima a fair odd a partir da odd de abertura da Bet365.
+    Devolve None se fora do range calibrado.
+    """
     if not (MIN_ODD <= opening_odd <= MAX_ODD):
         return None
     factor = get_calibration_factor(opening_odd)
@@ -33,30 +42,36 @@ def calculate_edge(opening_odd: float, fair_odd: float) -> float:
     return round((opening_odd / fair_odd - 1) * 100, 2)
 
 
-def minimum_acceptable_odd(fair_odd: float, min_edge: float = MIN_EDGE_PCT) -> float:
+def minimum_acceptable_odd(fair_odd: float,
+                            min_edge: float = MIN_EDGE_PCT) -> float:
     return round(fair_odd * (1 + min_edge / 100), 3)
 
 
+def ev_level(edge_pct: float) -> str:
+    if edge_pct >= 20:
+        return "🔥 Elite"
+    elif edge_pct >= 15:
+        return "✅ Strong"
+    return "📊 Value"
+
+
 def is_value_bet(opening_odd: float) -> dict | None:
+    """
+    Verifica se uma odd da Bet365 tem value com base no modelo calibrado.
+    Devolve dict com detalhes ou None se não tiver value.
+    """
     if not (MIN_ODD <= opening_odd <= MAX_ODD):
         return None
-    fair_odd = estimate_fair_odd(opening_odd)
-    if fair_odd is None:
+    fair = estimate_fair_odd(opening_odd)
+    if fair is None:
         return None
-    edge = calculate_edge(opening_odd, fair_odd)
+    edge = calculate_edge(opening_odd, fair)
     if edge < MIN_EDGE_PCT:
         return None
-    min_odd = minimum_acceptable_odd(fair_odd)
-    if edge >= 20:
-        level = "🔥 Elite"
-    elif edge >= 15:
-        level = "✅ Strong"
-    else:
-        level = "📊 Value"
     return {
         "opening_odd": opening_odd,
-        "fair_odd":    fair_odd,
+        "fair_odd":    fair,
         "edge_pct":    edge,
-        "min_odd":     min_odd,
-        "level":       level,
+        "min_odd":     minimum_acceptable_odd(fair),
+        "level":       ev_level(edge),
     }

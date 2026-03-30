@@ -2,24 +2,40 @@
 model.py — Modelo de calibração para detecção de early value bets.
 
 Calibrado com 703 picks reais (Special One 182 + Andrey2505 521 Bet365).
-Factor contínuo: factor = 0.9927 - 0.0605 * odd
-Range: 1.50 – 2.80 | Threshold: edge >= 5%
+Factores contínuos segmentados por mercado:
+
+  1X2 (ML/DNB): factor = 0.9927 - 0.0605 * odd  (base, mais margem)
+  AH (Spread):  factor = 0.9980 - 0.0520 * odd  (mais eficiente)
+  OU (Totals):  factor = 0.9955 - 0.0560 * odd  (intermédio)
+
+Range: 1.50 – 2.80 | Threshold: edge >= 3%
 """
 
-MIN_EDGE_PCT     = 5.0
+MIN_EDGE_PCT     = 3.0   # early bets têm drifts de 2-5%, 3% é razoável
 MIN_ODD          = 1.50
 MAX_ODD          = 2.80
 MIN_KICKOFF_DATE = "2026-04-15"
 
 
-def get_calibration_factor(odd: float) -> float:
-    return round(0.9927 - 0.0605 * odd, 4)
+def get_calibration_factor(odd: float, market: str = "1X2") -> float:
+    """
+    Factor por mercado — quanto menor, mais a Bet365 está acima do mercado sharp.
+    1X2: mais margem → mais drift → factor mais baixo
+    AH:  mais eficiente → menos drift → factor mais alto
+    OU:  intermédio
+    """
+    if market == "AH":
+        return round(0.9980 - 0.0520 * odd, 4)
+    elif market == "OU":
+        return round(0.9955 - 0.0560 * odd, 4)
+    else:  # 1X2, ML, DNB
+        return round(0.9927 - 0.0605 * odd, 4)
 
 
-def estimate_fair_odd(opening_odd: float) -> float | None:
+def estimate_fair_odd(opening_odd: float, market: str = "1X2") -> float | None:
     if not (MIN_ODD <= opening_odd <= MAX_ODD):
         return None
-    factor = get_calibration_factor(opening_odd)
+    factor = get_calibration_factor(opening_odd, market)
     return round(opening_odd * factor, 3)
 
 
@@ -39,25 +55,30 @@ def ev_level(edge_pct: float) -> str:
         return "🔥 Elite"
     elif edge_pct >= 15:
         return "✅ Strong"
+    elif edge_pct >= 8:
+        return "📊 Value"
     return "📊 Value"
 
 
-def is_value_bet(opening_odd: float) -> dict | None:
+def is_value_bet(opening_odd: float, market: str = "1X2") -> dict | None:
     """
     Verifica se uma odd tem value com base no modelo calibrado.
+
+    market: "1X2" (ML/DNB), "AH" (Spread), "OU" (Totals)
+
     Devolve dict com detalhes ou None se não tiver value ou fora do range.
     """
     if not (MIN_ODD <= opening_odd <= MAX_ODD):
         return None
-    fair = estimate_fair_odd(opening_odd)
+    fair = estimate_fair_odd(opening_odd, market)
     if fair is None:
         return None
     edge = calculate_edge(opening_odd, fair)
     if edge < MIN_EDGE_PCT:
         return None
     return {
-        "fair_odd":  fair,
-        "edge_pct":  edge,
-        "min_odd":   minimum_acceptable_odd(fair),
-        "level":     ev_level(edge),
+        "fair_odd": fair,
+        "edge_pct": edge,
+        "min_odd":  minimum_acceptable_odd(fair),
+        "level":    ev_level(edge),
     }

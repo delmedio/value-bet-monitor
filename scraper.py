@@ -199,6 +199,14 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     b365 = _extract_markets(b365_raw)
     sbo  = _extract_markets(sbo_raw) if sbo_raw else {}
 
+    # Debug temporário — ver estrutura de mercados
+    _home_dbg = event_data.get("home", "")
+    if any(x in _home_dbg for x in ("Newcastle", "Brentford", "Chelsea")):
+        logger.info(f"DEBUG {_home_dbg} — mercados B365: {list(b365.keys())}")
+        for mk in ["Spread", "Alternative Asian Handicap", "Draw No Bet"]:
+            if mk in b365:
+                logger.info(f"  {mk}: {b365[mk]}")
+
     home     = event_data.get("home", "")
     away     = event_data.get("away", "")
     game     = f"{home} vs {away}"
@@ -279,7 +287,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
                 display_odd = odd  # para DNB, odd já é a odd calculada
-                sel_display = f"DNB {sel}" if mkt == "DNB" else sel
+                sel_display = sel  # market="DNB" já identifica o tipo; sel é o nome da equipa
                 best_vb = ValueBet(
                     game=game, home_team=home, away_team=away,
                     league=league, kickoff=kickoff,
@@ -515,4 +523,3 @@ def fetch_sbo_closing_odds(event_id: int) -> dict:
     except Exception as e:
         logger.warning(f"fetch_sbo_closing_odds {event_id}: {e}")
         return {}
-

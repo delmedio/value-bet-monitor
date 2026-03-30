@@ -191,7 +191,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     """
     bms      = event_data.get("bookmakers", {})
     b365_raw = bms.get("Bet365", [])
-    sbo_raw  = bms.get("SBObet", [])
+    sbo_raw  = bms.get("Sbobet", [])
 
     if not b365_raw:
         return None
@@ -395,7 +395,7 @@ def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
     for event_id in event_ids:
         try:
             data = _get("/odds", {"eventId": event_id,
-                                  "bookmakers": "Bet365,SBObet"})
+                                  "bookmakers": "Bet365,Sbobet"})
             if isinstance(data, dict) and data:
                 results.append(data)
             elif isinstance(data, list) and data:
@@ -469,9 +469,9 @@ def fetch_value_bets() -> list[ValueBet]:
 def fetch_sbo_closing_odds(event_id: int) -> dict:
     """Busca odds de fecho SBObet para CLV real."""
     try:
-        data = _get("/odds", {"eventId": event_id, "bookmakers": "SBObet"})
+        data = _get("/odds", {"eventId": event_id, "bookmakers": "Sbobet"})
         bms = data.get("bookmakers", {}) if isinstance(data, dict) else {}
-        sbo = bms.get("SBObet", [])
+        sbo = bms.get("Sbobet", [])
         result = {}
         for mkt in sbo:
             name = mkt.get("name", "")

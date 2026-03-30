@@ -264,10 +264,11 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
             candidates.append((ml_odd, "ML", team, None, href_ml, sbo_odd))
 
         # Escolhe maior edge com SBO fechada
+        MKT_TYPE = {"ML": "1X2", "DNB": "1X2", "Spread": "AH", "Totals": "OU"}
         for odd, mkt, sel, hdp_val, href, sbo_odd in candidates:
             if sbo_odd is not None:
                 continue
-            result = is_value_bet(odd)
+            result = is_value_bet(odd, market=MKT_TYPE.get(mkt, "1X2"))
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
                 best_vb = ValueBet(
@@ -401,6 +402,7 @@ def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
             results.append(data)
         elif isinstance(data, list) and data:
             results.extend(data)
+    logger.info(f"fetch_odds_multi: {len(results)} eventos com odds")
     return results
 
 

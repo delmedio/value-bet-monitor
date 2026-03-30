@@ -246,7 +246,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
             if dnb:
                 # SBO DNB = SBO ML normalizado (aproximação)
                 sbo_dnb = None  # SBO não tem DNB directo
-                candidates.append((dnb, "DNB", f"DNB {team}", None, href_ml, sbo_dnb, None))
+                candidates.append((dnb, "DNB", team, None, href_ml, sbo_dnb, None))
 
         # 3. AH principal
         ah_odd = _float(b_ah.get(side))
@@ -278,11 +278,12 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
             result = is_value_bet(odd, draw_odd=dx)
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
-                display_odd = result.get("dnb_odd", odd) if mkt == "DNB" else odd
+                display_odd = odd  # para DNB, odd já é a odd calculada
+                sel_display = f"DNB {sel}" if mkt == "DNB" else sel
                 best_vb = ValueBet(
                     game=game, home_team=home, away_team=away,
                     league=league, kickoff=kickoff,
-                    market=mkt, selection=sel,
+                    market=mkt, selection=sel_display,
                     odds_b365=display_odd,
                     fair_odd=result["fair_odd"],
                     min_odd=result["min_odd"],
@@ -514,3 +515,4 @@ def fetch_sbo_closing_odds(event_id: int) -> dict:
     except Exception as e:
         logger.warning(f"fetch_sbo_closing_odds {event_id}: {e}")
         return {}
+

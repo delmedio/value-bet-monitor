@@ -289,6 +289,41 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
 
 
 
+    # ── Over/Under (Totals) ──────────────────────────────────────────────────
+    b_ou   = b365.get("Totals", {})
+    sbo_ou = sbo.get("Totals", {})
+    if b_ou:
+        line      = _float(b_ou.get("max") or b_ou.get("hdp") or 0)
+        over_odd  = _float(b_ou.get("over") or b_ou.get("home"))
+        under_odd = _float(b_ou.get("under") or b_ou.get("away"))
+        href_ou   = b_ou.get("href", "")
+
+        for direction, odd, opp in [("Over", over_odd, under_odd),
+                                     ("Under", under_odd, over_odd)]:
+            sbo_odd = _float(sbo_ou.get("over" if direction == "Over" else "under") or 0) or None
+            if sbo_odd is not None:
+                continue
+            result = is_value_bet(odd, market="OU")
+            if result and result["edge_pct"] > best_edge:
+                best_edge = result["edge_pct"]
+                best_vb = ValueBet(
+                    game=game, home_team=home, away_team=away,
+                    league=league, kickoff=kickoff,
+                    market="Totals", selection=f"{direction} {line}",
+                    odds_b365=odd,
+                    fair_odd=result["fair_odd"],
+                    min_odd=result["min_odd"],
+                    edge_pct=result["edge_pct"],
+                    level=result["level"],
+                    event_id=event_id, line=line, opp_odd=opp,
+                    bet_href=href_ou,
+                    odds_sbo=None,
+                )
+
+    return best_vb
+
+
+
 # Slugs das ligas que nos interessam (mapeamento nome → slug da API)
 LEAGUE_SLUGS = [
     "portugal-liga-portugal",

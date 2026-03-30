@@ -390,16 +390,18 @@ def fetch_events() -> list[dict]:
 
 
 def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
+    """Busca odds individualmente para cada evento (Bet365 + SBObet)."""
     results = []
-    for i in range(0, len(event_ids), 10):
-        batch = event_ids[i:i+10]
-        ids_str = ",".join(str(x) for x in batch)
-        data = _get("/odds/multi", {"eventIds": ids_str,
-                                    "bookmakers": "Bet365,SBObet"})
-        if isinstance(data, list):
-            results.extend(data)
-        elif isinstance(data, dict):
-            results.extend(data.get("data", []))
+    for event_id in event_ids:
+        try:
+            data = _get("/odds", {"eventId": event_id,
+                                  "bookmakers": "Bet365,SBObet"})
+            if isinstance(data, dict) and data:
+                results.append(data)
+            elif isinstance(data, list) and data:
+                results.extend(data)
+        except Exception as e:
+            logger.warning(f"fetch_odds {event_id}: {e}")
     return results
 
 
@@ -419,6 +421,34 @@ def fetch_value_bets() -> list[ValueBet]:
 
     if not relevant:
         return []
+
+    # Filtra: só jogos entre MIN_KICKOFF_DATE e +21 dias a partir de hoje
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    min_dt = datetime.strptime(MIN_KICKOFF_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    max_dt = now + timedelta(days=21)
+
+    def _ev_date_ok(ev):
+        date_str = ev.get("date", ev.get("startTime", ""))
+        try:
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            return min_dt <= dt <= max_dt
+        except Exception:
+            return False
+
+    relevant = [ev for ev in relevant if _ev_date_ok(ev)]
+    logger.info(f"Eventos na janela de 21 dias: {len(relevant)}")
+
+    # Exclui jogos já enviados — não vale a pena buscar odds de picks já alertados
+    import json, hashlib
+    sent_cache = set()
+    cache_file = "sent_alerts.json"
+    try:
+        import pathlib
+        if pathlib.Path(cache_file).exists():
+            sent_cache = set(json.loads(pathlib.Path(cache_file).read_text()).get("sent", []))
+    except Exception:
+        pass
 
     event_ids = [ev.get("id") for ev in relevant if ev.get("id")]
     odds_data = fetch_odds_multi(event_ids)

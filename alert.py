@@ -118,12 +118,26 @@ def format_equivalent_lines(market: str, selection: str,
     lines = []
 
     if market == "DNB":
-        # DNB já é o mercado principal — mostra AH -0.25 equivalente
+        # DNB = AH 0
+        # AH -0.25: empate perde metade → mais difícil → odd MAIOR que DNB
+        # AH +0.25: empate ganha metade → mais fácil → odd MENOR que DNB
         if odds_x:
-            ah025 = calc_ah025(opening_odd, odds_x)
-            team = selection.replace("DNB ", "")
-            if ah025:
-                lines.append(f"• AH {team} -0.25: {ah025:.2f}")
+            try:
+                p_dnb = 1 / opening_odd
+                p_opp_dnb = 1 - p_dnb
+                opp_dnb = round(1 / p_opp_dnb, 3) if p_opp_dnb > 0 else None
+                team = selection
+                if opp_dnb:
+                    # AH -0.25: mais difícil → odd acima do DNB
+                    ah_harder = calc_ou_quarter_above(opening_odd, opp_dnb)
+                    # AH +0.25: mais fácil → odd abaixo do DNB
+                    ah_easier = calc_ou_quarter_below(opening_odd, opp_dnb)
+                    if ah_harder:
+                        lines.append(f"• AH {team} -0.25: {ah_harder:.2f}")
+                    if ah_easier:
+                        lines.append(f"• AH {team} +0.25: {ah_easier:.2f}")
+            except Exception:
+                pass
 
     elif market == "ML":
         if odds_x:
@@ -150,12 +164,14 @@ def format_equivalent_lines(market: str, selection: str,
                 if qa:
                     lines.append(f"• Over {line + 0.25}: {qa:.2f}")
             else:
-                qb = calc_ou_quarter_below(opening_odd, opp)
-                qa = calc_ou_quarter_above(opening_odd, opp)
-                if qb:
-                    lines.append(f"• Under {line - 0.25}: {qb:.2f}")
+                # Under: linha abaixo (Under 2.25) é mais difícil → odd maior (calc_above)
+                # Under: linha acima (Under 2.75) é mais fácil → odd menor (calc_below)
+                qa = calc_ou_quarter_above(opening_odd, opp)  # Under 2.25: mais difícil
+                qb = calc_ou_quarter_below(opening_odd, opp)  # Under 2.75: mais fácil
                 if qa:
-                    lines.append(f"• Under {line + 0.25}: {qa:.2f}")
+                    lines.append(f"• Under {line - 0.25}: {qa:.2f}")
+                if qb:
+                    lines.append(f"• Under {line + 0.25}: {qb:.2f}")
         except Exception:
             pass
 

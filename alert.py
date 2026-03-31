@@ -54,21 +54,23 @@ def calc_dnb(home_odd: float, draw_odd: float) -> float | None:
 
 
 def calc_ah025(home_odd: float, draw_odd: float) -> float | None:
+    """AH -0.25 = split entre DNB (AH 0) e AH -0.5."""
     try:
-        dnb = calc_dnb(home_odd, draw_odd)
-        if dnb is None:
-            return None
-        # AH -0.25 ≈ split entre 0 e -0.5
-        ah0 = dnb
-        # p_0.5 ≈ (1/home_odd - 0.5*(1/draw_odd)) normalizado
         p_home = 1 / home_odd
         p_draw = 1 / draw_odd
         p_away = 1 - p_home - p_draw
         if p_away <= 0:
             return None
-        p_half = p_home / (p_home + p_away)
-        ah05 = round(1 / p_half, 2)
-        return round(2 / (1 / ah0 + 1 / ah05), 2)
+        # DNB (AH 0): exclui empate
+        p_dnb = p_home / (p_home + p_away)
+        odd_dnb = 1 / p_dnb
+        # AH -0.5: empate conta como meia perda para o lado home
+        p_ah05 = p_home / (p_home + p_away + p_draw / 2)
+        if p_ah05 <= 0:
+            return None
+        odd_ah05 = 1 / p_ah05
+        # AH -0.25 = média harmónica entre DNB e AH -0.5
+        return round(2 / (1 / odd_dnb + 1 / odd_ah05), 2)
     except Exception:
         return None
 

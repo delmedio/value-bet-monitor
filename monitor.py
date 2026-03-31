@@ -68,12 +68,12 @@ def run_normal():
             selection=vb.selection,
             kickoff=vb.kickoff,
             opening_odd=vb.odds_b365,
-            odds_sbo_open=vb.odds_sbo,
             fair_odd=vb.fair_odd,
             edge_pct=vb.edge_pct,
             level=vb.level,
             bet_href=vb.bet_href,
             event_id=vb.event_id,
+            sbo_open=vb.odds_sbo,
         )
         save_pick(pick)
         sent_cache.add(pick_id)
@@ -121,3 +121,4 @@ if __name__ == "__main__":
     elif args.report: send_weekly_report()
     elif args.export: send_export()
     else:             run_normal()
+        

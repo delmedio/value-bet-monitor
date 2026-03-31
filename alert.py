@@ -108,7 +108,15 @@ def format_equivalent_lines(market: str, selection: str,
                              odds_x: float | None = None) -> str:
     lines = []
 
-    if market == "ML":
+    if market == "DNB":
+        # DNB já é o mercado principal — mostra AH -0.25 equivalente
+        if odds_x:
+            ah025 = calc_ah025(opening_odd, odds_x)
+            team = selection.replace("DNB ", "")
+            if ah025:
+                lines.append(f"• AH {team} -0.25: {ah025:.2f}")
+
+    elif market == "ML":
         if odds_x:
             dnb = calc_dnb(opening_odd, odds_x)
             ah025 = calc_ah025(opening_odd, odds_x)
@@ -185,7 +193,7 @@ def send_alert(vb) -> None:
         f"📌 {vb.market} — {vb.selection}\n"
         f"💰 Bet365: {vb.odds_b365:.3f}\n"
         f"⚖️ Fair: {fair_display} | Mín: {min_display}\n"
-        f"📈 Edge: +{vb.ev_pct}% CLV esperado"
+        f"📈 Edge: +{vb.edge_pct}% CLV esperado"
         f"{href_line}"
         f"{eq}"
     )
@@ -408,7 +416,7 @@ def send_export() -> None:
         "selection": p.selection,
         "kickoff": p.kickoff,
         "opening_odd": p.opening_odd,
-        "ev_pct": p.ev_pct,
+        "ev_pct": p.edge_pct,
         "closing_odd_sbo": p.closing_odd_sbo,
         "clv_real": p.clv_real,
     } for p in picks], indent=2)

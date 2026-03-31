@@ -76,38 +76,45 @@ def calc_ah025(home_odd: float, draw_odd: float) -> float | None:
 
 
 def calc_ou_quarter_below(main_odd: float, opp_odd: float) -> float | None:
-    """Quarter line ABAIXO (ex: Over 2.5 → Over 2.25)."""
+    """Quarter line ABAIXO — inclui resultado exacto (odd mais baixa).
+    Ex: Under 2.5 → Under 2.25 (mais fácil de ganhar → odd mais baixa)
+    Ex: Over 2.5 → Over 2.25 (mais fácil de ganhar → odd mais baixa)
+    """
     try:
         p_main = 1 / main_odd
-        p_opp = 1 / opp_odd
-        p_exact = 0.20 * p_opp
-        p_below = p_main + p_exact
-        if p_below <= 0 or p_below >= 1:
+        p_opp  = 1 / opp_odd
+        p_exact = 0.18 * p_opp
+        p_q = p_main + p_exact / 2
+        if p_q <= 0 or p_q >= 1:
             return None
-        q_odd = round(1 / p_below, 2)
-        return round(2 / (1 / main_odd + 1 / q_odd), 2)
+        odd_adj = round(1 / p_q, 3)
+        return round(2 / (1 / main_odd + 1 / odd_adj), 2)
     except Exception:
         return None
 
 
 def calc_ou_quarter_above(main_odd: float, opp_odd: float) -> float | None:
-    """Quarter line ACIMA (ex: Over 2.5 → Over 2.75)."""
+    """Quarter line ACIMA — exclui resultado exacto (odd mais alta).
+    Ex: Under 2.5 → Under 2.75 (mais difícil de ganhar → odd mais alta)
+    Ex: Over 2.5 → Over 2.75 (mais difícil de ganhar → odd mais alta)
+    """
     try:
         p_main = 1 / main_odd
-        p_opp = 1 / opp_odd
-        p_exact = 0.20 * p_opp
-        p_above = p_main - p_exact
-        if p_above <= 0 or p_above >= 1:
+        p_opp  = 1 / opp_odd
+        p_exact = 0.18 * p_opp
+        p_q = p_main - p_exact / 2
+        if p_q <= 0 or p_q >= 1:
             return None
-        q_odd = round(1 / p_above, 2)
-        return round(2 / (1 / main_odd + 1 / q_odd), 2)
+        odd_adj = round(1 / p_q, 3)
+        return round(2 / (1 / main_odd + 1 / odd_adj), 2)
     except Exception:
         return None
 
 
 def format_equivalent_lines(market: str, selection: str,
                              opening_odd: float,
-                             odds_x: float | None = None) -> str:
+                             odds_x: float | None = None,
+                             opp_odd: float | None = None) -> str:
     lines = []
 
     if market == "DNB":
@@ -129,23 +136,22 @@ def format_equivalent_lines(market: str, selection: str,
                 lines.append(f"• AH {team} -0.25: {ah025:.2f}")
 
     elif market == "Totals":
-        # Tenta extrair linha e tipo
         parts = selection.split()
         try:
             direction = parts[0]  # Over ou Under
             line = float(parts[1])
-            # Precisamos da odd oposta — aproximação com margem 1.90/1.90
-            opp_est = round(1 / (1 - 1 / opening_odd - 0.025), 2)
+            # Usa odd oposta real se disponível, senão estima
+            opp = opp_odd if opp_odd else round(1 / (1 - 1 / opening_odd - 0.025), 2)
             if direction == "Over":
-                qb = calc_ou_quarter_below(opening_odd, opp_est)
-                qa = calc_ou_quarter_above(opening_odd, opp_est)
+                qb = calc_ou_quarter_below(opening_odd, opp)
+                qa = calc_ou_quarter_above(opening_odd, opp)
                 if qb:
                     lines.append(f"• Over {line - 0.25}: {qb:.2f}")
                 if qa:
                     lines.append(f"• Over {line + 0.25}: {qa:.2f}")
             else:
-                qb = calc_ou_quarter_below(opening_odd, opp_est)
-                qa = calc_ou_quarter_above(opening_odd, opp_est)
+                qb = calc_ou_quarter_below(opening_odd, opp)
+                qa = calc_ou_quarter_above(opening_odd, opp)
                 if qb:
                     lines.append(f"• Under {line - 0.25}: {qb:.2f}")
                 if qa:
@@ -181,6 +187,7 @@ def send_alert(vb) -> None:
         selection=vb.selection,
         opening_odd=vb.odds_b365,
         odds_x=vb.odds_x,
+        opp_odd=vb.opp_odd,
     )
 
     href_line = f'\n🔗 <a href="{vb.bet_href}">Apostar na Bet365</a>' if vb.bet_href else ""
@@ -426,3 +433,4 @@ def send_export() -> None:
         subject="📦 Value Bet Monitor — Export picks_log",
         html_body=f"<pre style='font-family:monospace;font-size:12px'>{data}</pre>",
     )
+

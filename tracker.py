@@ -1,46 +1,44 @@
 """
-tracker.py — Registo de picks e tracking de CLV real via Pinnacle closing odds
-Suporta report semanal + histórico acumulado por semana
+tracker.py — Guarda picks e apura CLV real.
+
+CLV real = odd abertura Bet365 vs odd fecho SBObet.
+Se entrámos a 2.30 na Bet365 e a SBO fecha a 2.10 → CLV = +9.5%.
 """
 
-import json
-import logging
-import hashlib
-from datetime import datetime, timezone, timedelta
+import json, hashlib, logging
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from collections import defaultdict
+from typing import Optional
+from datetime import datetime, timezone, timedelta
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 PICKS_FILE = Path("picks_log.json")
 
 
 @dataclass
 class Pick:
-    id: str
-    event_id: str
-    sport_key: str
+    pick_id: str
     game: str
     league: str
-    kickoff: str
-    kickoff_ts: float
     market: str
     selection: str
-    bookmaker: str
-    opening_odd: float
-    fair_odd: float
-    min_odd: float
-    edge_pct: float
+    kickoff: str
+    opening_odd: float         # Bet365 abertura (nossa entrada)
+    fair_odd: float            # estimado pelo modelo na altura da entrada
+    edge_pct: float            # edge estimado na altura da entrada
     level: str
-    alerted_at: str
-    pin_closing_odd: float | None = None
-    clv_real: float | None = None
-    tracked_at: str | None = None
+    bet_href: str
+    event_id: int
+    # SBObet abertura — se já disponível quando enviámos o alerta
+    sbo_open: Optional[float] = None
+    # SBObet fecho — preenchido após o jogo
+    closing_odd_sbo: Optional[float] = None
+    # CLV real = (opening_b365 / closing_sbo - 1) * 100
+    clv_real: Optional[float] = None
+    tracked_at: Optional[str] = None
 
 
-def make_pick_id(game: str, market: str, selection: str, odd: float = 0) -> str:
-    # ID baseado em jogo + mercado + selecção — sem odd para evitar duplicados
-    # quando a odd muda ligeiramente entre runs
+def make_pick_id(game: str, market: str, selection: str) -> str:
     raw = f"{game}|{market}|{selection}"
     return hashlib.md5(raw.encode()).hexdigest()[:10]
 
@@ -49,180 +47,90 @@ def load_picks() -> list[Pick]:
     if not PICKS_FILE.exists():
         return []
     try:
-        data = json.loads(PICKS_FILE.read_text())
-        picks = []
-        valid_fields = {f.name for f in Pick.__dataclass_fields__.values()}
-        for p in data.get("picks", []):
-            # Remove campos desconhecidos (compatibilidade com versões antigas)
-            clean = {k: v for k, v in p.items() if k in valid_fields}
-            try:
-                picks.append(Pick(**clean))
-            except Exception as e:
-                log.debug(f"Pick ignorado: {e}")
-        return picks
+        raw = json.loads(PICKS_FILE.read_text())
+        known = set(Pick.__dataclass_fields__.keys())
+        return [Pick(**{k: v for k, v in p.items() if k in known}) for p in raw]
     except Exception as e:
-        log.error(f"Erro ao carregar picks: {e}")
+        logger.error(f"load_picks: {e}")
         return []
 
 
 def save_picks(picks: list[Pick]) -> None:
-    PICKS_FILE.write_text(json.dumps(
-        {"picks": [asdict(p) for p in picks]},
-        indent=2, ensure_ascii=False
-    ))
+    PICKS_FILE.write_text(json.dumps([asdict(p) for p in picks], indent=2))
 
 
 def save_pick(pick: Pick) -> None:
     picks = load_picks()
-    if not any(p.id == pick.id for p in picks):
-        picks.append(pick)
-        save_picks(picks)
+    if any(p.pick_id == pick.pick_id for p in picks):
+        return
+    picks.append(pick)
+    save_picks(picks)
 
 
-def is_ready_to_track(kickoff_ts: float) -> bool:
-    return datetime.now(timezone.utc).timestamp() > kickoff_ts + (3 * 3600)
+def track_pending_picks() -> None:
+    """
+    Para cada pick pendente, tenta apurar CLV real.
+    Condição: kickoff já passou há pelo menos 2h.
+    CLV = (odd_abertura_b365 / odd_fecho_sbo - 1) * 100
+    """
+    from scraper import fetch_sbo_closing_odds
 
-
-def track_pending_picks() -> list[Pick]:
-    from scraper import fetch_closing_odds
     picks = load_picks()
-    newly_tracked = []
+    changed = False
 
     for pick in picks:
         if pick.clv_real is not None:
             continue
-        if not is_ready_to_track(pick.kickoff_ts):
-            continue
-        if not pick.event_id or not pick.sport_key:
-            continue
 
-        log.info(f"Tracking: {pick.game} | {pick.selection}")
-        closing = fetch_closing_odds(pick.event_id, pick.sport_key)
-        if not closing:
+        try:
+            dt = datetime.strptime(pick.kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
+        except Exception:
             continue
 
-        pin_odd = None
-        sel = pick.selection.lower()
-        mkt = pick.market.lower()
+        if datetime.now(timezone.utc) < dt + timedelta(hours=2):
+            continue
 
-        if "match odds" in mkt:
-            home = pick.game.split(" vs ")[0].lower().replace(" ", "_")
-            away = pick.game.split(" vs ")[-1].lower().replace(" ", "_")
-            if home[:6] in sel:
-                pin_odd = closing.get(f"pin_close_h2h_{home}")
-            elif away[:6] in sel:
-                pin_odd = closing.get(f"pin_close_h2h_{away}")
-        elif "over" in sel:
-            pin_odd = closing.get("pin_close_totals_over")
-        elif "under" in sel:
-            pin_odd = closing.get("pin_close_totals_under")
-        elif "asian handicap" in mkt:
-            home = pick.game.split(" vs ")[0].lower().replace(" ", "_")
-            away = pick.game.split(" vs ")[-1].lower().replace(" ", "_")
-            if home[:6] in sel:
-                pin_odd = closing.get(f"pin_close_spreads_{home}")
-            else:
-                pin_odd = closing.get(f"pin_close_spreads_{away}")
+        sbo = fetch_sbo_closing_odds(pick.event_id)
+        if not sbo:
+            continue
 
-        if pin_odd and pin_odd > 1.0:
-            pick.pin_closing_odd = pin_odd
-            pick.clv_real = round((pick.opening_odd / pin_odd - 1) * 100, 2)
-            pick.tracked_at = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M")
-            newly_tracked.append(pick)
-            log.info(f"CLV real: {pick.clv_real:+.1f}%")
+        closing = _find_sbo_closing(pick, sbo)
+        if closing and closing > 1.0:
+            clv = round((pick.opening_odd / closing - 1) * 100, 2)
+            pick.closing_odd_sbo = closing
+            pick.clv_real = clv
+            pick.tracked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+            changed = True
+            logger.info(f"CLV tracked: {pick.game} {pick.market} {pick.selection} → CLV={clv:+.1f}%")
 
-    if newly_tracked:
+    if changed:
         save_picks(picks)
-    return newly_tracked
 
 
-def get_week_label(ts: float) -> str:
-    """Retorna label da semana no formato 'Semana DD/MM'."""
-    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-    # Início da semana (segunda-feira)
-    monday = dt - timedelta(days=dt.weekday())
-    sunday = monday + timedelta(days=6)
-    return f"{monday.strftime('%d/%m')}–{sunday.strftime('%d/%m/%Y')}"
+def _find_sbo_closing(pick: Pick, sbo: dict) -> Optional[float]:
+    """Encontra a odd SBObet correspondente ao pick."""
+    def f(v):
+        try:
+            return float(v) if v else 0.0
+        except Exception:
+            return 0.0
 
+    home_team = pick.game.split(" vs ")[0]
 
-def get_picks_for_report(days: int = 7) -> dict:
-    """Picks da semana actual."""
-    picks = load_picks()
-    cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
-    recent = [p for p in picks if p.kickoff_ts >= cutoff_ts]
-    tracked = [p for p in recent if p.clv_real is not None]
-    pending = [p for p in recent if p.clv_real is None]
-    clv_values = [p.clv_real for p in tracked]
-    beat = [c for c in clv_values if c > 0]
-    return {
-        "total_picks":    len(recent),
-        "tracked":        tracked,
-        "pending":        pending,
-        "clv_medio":      round(sum(clv_values) / len(clv_values), 2) if clv_values else 0,
-        "beat_line_pct":  round(len(beat) / len(clv_values) * 100, 1) if clv_values else 0,
-        "beat_line_count": len(beat),
-        "total_tracked":  len(tracked),
-    }
+    if pick.market == "ML":
+        ml = sbo.get("ML", {})
+        home_in = home_team.lower() in pick.selection.lower()
+        return f(ml.get("home" if home_in else "away")) or None
 
+    elif pick.market == "Spread":
+        sp = sbo.get("Spread", {})
+        home_in = home_team.lower() in pick.selection.lower()
+        return f(sp.get("home" if home_in else "away")) or None
 
-def get_all_weekly_stats() -> list[dict]:
-    """
-    Retorna estatísticas agrupadas por semana — para o histórico acumulado.
-    Ordenado da semana mais recente para a mais antiga.
-    """
-    picks = load_picks()
-    tracked = [p for p in picks if p.clv_real is not None]
+    elif pick.market == "Totals":
+        tot = sbo.get("Totals", {})
+        if "Over" in pick.selection:
+            return f(tot.get("over") or tot.get("home")) or None
+        return f(tot.get("under") or tot.get("away")) or None
 
-    if not tracked:
-        return []
-
-    # Agrupa por semana
-    by_week: dict[str, list] = defaultdict(list)
-    for pick in tracked:
-        label = get_week_label(pick.kickoff_ts)
-        by_week[label].append(pick)
-
-    # Calcula stats por semana
-    weekly_stats = []
-    for label, week_picks in by_week.items():
-        clv_vals = [p.clv_real for p in week_picks]
-        beat = sum(1 for c in clv_vals if c > 0)
-        clv_med = sum(clv_vals) / len(clv_vals)
-
-        # Stats por liga dentro desta semana
-        by_league: dict[str, list] = defaultdict(list)
-        for p in week_picks:
-            by_league[p.league].append(p)
-
-        weekly_stats.append({
-            "label":      label,
-            "picks":      week_picks,
-            "n":          len(week_picks),
-            "clv_medio":  round(clv_med, 2),
-            "beat_count": beat,
-            "beat_pct":   round(beat / len(clv_vals) * 100, 1),
-            "by_league":  dict(by_league),
-            # Ordena pelo kickoff mais recente para ordenar semanas
-            "sort_ts":    max(p.kickoff_ts for p in week_picks),
-        })
-
-    # Mais recente primeiro
-    weekly_stats.sort(key=lambda x: x["sort_ts"], reverse=True)
-    return weekly_stats
-
-
-def get_cumulative_stats() -> dict:
-    """Estatísticas cumulativas de todos os picks tracked."""
-    picks = load_picks()
-    tracked = [p for p in picks if p.clv_real is not None]
-    if not tracked:
-        return {"n": 0, "clv_medio": 0, "beat_pct": 0, "beat_count": 0}
-    clv_vals = [p.clv_real for p in tracked]
-    beat = sum(1 for c in clv_vals if c > 0)
-    return {
-        "n":          len(tracked),
-        "clv_medio":  round(sum(clv_vals) / len(clv_vals), 2),
-        "beat_count": beat,
-        "beat_pct":   round(beat / len(clv_vals) * 100, 1),
-    }
-
+    return None

@@ -48,8 +48,23 @@ def load_picks() -> list[Pick]:
         return []
     try:
         raw = json.loads(PICKS_FILE.read_text())
+        if not isinstance(raw, list):
+            return []
         known = set(Pick.__dataclass_fields__.keys())
-        return [Pick(**{k: v for k, v in p.items() if k in known}) for p in raw]
+        picks = []
+        for p in raw:
+            if not isinstance(p, dict):
+                continue
+            filtered = {k: v for k, v in p.items() if k in known}
+            # Campos obrigatórios mínimos
+            if "pick_id" not in filtered or "game" not in filtered:
+                continue
+            # Defaults para campos novos que podem não existir
+            filtered.setdefault("fair_odd", 0.0)
+            filtered.setdefault("edge_pct", 0.0)
+            filtered.setdefault("sbo_open", None)
+            picks.append(Pick(**filtered))
+        return picks
     except Exception as e:
         logger.error(f"load_picks: {e}")
         return []

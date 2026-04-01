@@ -14,7 +14,7 @@ from html import escape
 
 import requests
 
-from model import estimate_fair_odd, minimum_acceptable_odd
+from model import adaptive_min_edge, estimate_fair_odd, minimum_acceptable_odd
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def _equiv_min_odd(equiv_odd: float, market: str) -> float | None:
     fair = estimate_fair_odd(equiv_odd, market)
     if fair is None:
         return None
-    return minimum_acceptable_odd(fair)
+    return minimum_acceptable_odd(fair, adaptive_min_edge(market, equiv_odd))
 
 
 def _format_equiv_line(label: str, odd: float | None, market: str) -> str | None:
@@ -175,7 +175,7 @@ def format_equivalent_lines(
     if market == "ML" and odds_x:
         dnb = calc_dnb(opening_odd, odds_x)
         ah025 = calc_ah025_from_ml(opening_odd, odds_x)
-        dnb_line = _format_equiv_line(f"DNB {selection}", dnb, "1X2")
+        dnb_line = _format_equiv_line(f"DNB {selection}", dnb, "DNB")
         ah_line = _format_equiv_line(f"AH {selection} -0.25", ah025, "AH")
         if dnb_line:
             lines.append(dnb_line)
@@ -530,3 +530,4 @@ def send_export() -> None:
         subject="📦 Value Bet Monitor — Export picks_log",
         html_body=f"<pre style='font-family:monospace;font-size:12px'>{payload}</pre>",
     )
+

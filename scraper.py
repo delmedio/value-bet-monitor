@@ -260,7 +260,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     best_edge = 0.0
     best_vb: Optional[ValueBet] = None
 
-    MKT_TYPE = {"ML": "1X2", "DNB": "1X2", "Spread": "AH", "Totals": "OU"}
+    MKT_TYPE = {"ML": "ML", "DNB": "DNB", "Spread": "AH", "Totals": "OU"}
 
     # ── ML / DNB / AH por equipa ─────────────────────────────────────────────
     b_ml  = b365.get("ML", {})
@@ -300,7 +300,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
             # Só early bets — SBO ainda não abriu
             if sbo_odd is not None:
                 continue
-            result = is_value_bet(odd, market=MKT_TYPE.get(mkt, "1X2"))
+            result = is_value_bet(odd, market=MKT_TYPE.get(mkt, "ML"))
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
                 best_vb = ValueBet(

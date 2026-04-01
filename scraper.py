@@ -273,18 +273,25 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
 
     for side, team in [("home", home), ("away", away)]:
         candidates = []
+        dnb_odd = _float(b_dnb.get(side))
 
         # 1. AH principal
         ah_odd = _float(b_ah.get(side))
         ah_hdp = _float(b_ah.get("hdp") or 0)
         if ah_odd:
             sbo_odd = _float(sbo_ah.get(side)) or None
-            sign = f"{ah_hdp:+.2f}" if ah_hdp != 0 else ""
-            candidates.append((ah_odd, "Spread", f"{team} {sign}".strip(),
-                                ah_hdp, b_ah.get("href", ""), sbo_odd))
+            if ah_hdp == 0:
+                # AH 0 e equivalente a DNB. Se a API ja trouxer DNB, evitamos
+                # alertas duplicados para o mesmo jogo.
+                if not dnb_odd:
+                    candidates.append((ah_odd, "DNB", team,
+                                       None, b_ah.get("href", ""), sbo_odd))
+            else:
+                sign = f"{ah_hdp:+.2f}"
+                candidates.append((ah_odd, "Spread", f"{team} {sign}".strip(),
+                                    ah_hdp, b_ah.get("href", ""), sbo_odd))
 
         # 2. Draw No Bet real da API
-        dnb_odd = _float(b_dnb.get(side))
         if dnb_odd:
             candidates.append((dnb_odd, "DNB", team,
                                 None, b_dnb.get("href", ""), None))

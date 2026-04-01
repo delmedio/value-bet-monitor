@@ -1,8 +1,8 @@
 """
 tracker.py — Guarda picks e apura CLV real.
 
-CLV real = odd abertura Bet365 vs odd fecho SBObet.
-Se entrámos a 2.30 na Bet365 e a SBO fecha a 2.10 → CLV = +9.5%.
+CLV real = (odd abertura Bet365 / odd fecho Sbobet - 1) * 100
+Ex: entrámos a 2.30 na Bet365 e SBO fecha a 2.10 → CLV = +9.5%
 """
 
 import json, hashlib, logging
@@ -23,29 +23,28 @@ class Pick:
     market: str
     selection: str
     kickoff: str
-    opening_odd: float         # Bet365 abertura (nossa entrada)
-    fair_odd: float            # estimado pelo modelo na altura da entrada
-    edge_pct: float            # edge estimado na altura da entrada
+    opening_odd: float
+    fair_odd: float
+    edge_pct: float
     level: str
     bet_href: str
     event_id: int
-    # SBObet abertura — se já disponível quando enviámos o alerta
-    sbo_open: Optional[float] = None
-    # SBObet fecho — preenchido após o jogo
-    closing_odd_sbo: Optional[float] = None
-    # CLV real = (opening_b365 / closing_sbo - 1) * 100
-    clv_real: Optional[float] = None
+    sbo_open: Optional[float] = None       # Sbobet abertura (se já disponível)
+    closing_odd_sbo: Optional[float] = None  # Sbobet fecho (apurado após jogo)
+    clv_real: Optional[float] = None       # CLV real em %
     tracked_at: Optional[str] = None
 
 
 def make_pick_id(game: str, market: str, selection: str) -> str:
-    # Para Totals: ignora Over/Under e linha — um pick por jogo por mercado
-    # Para Spread: ignora a linha — um pick por jogo por lado
-    # Para ML/DNB: usa selecção completa
+    """
+    ID único por pick.
+    Totals: um pick por jogo (ignora Over/Under e linha).
+    Spread: um pick por equipa por jogo (ignora linha).
+    ML/DNB: usa game + market + selection completo.
+    """
     if market == "Totals":
         raw = f"{game}|Totals"
     elif market == "Spread":
-        # Extrai só o nome da equipa sem a linha
         team = selection.rsplit(" ", 1)[0] if " " in selection else selection
         raw = f"{game}|Spread|{team}"
     else:
@@ -66,10 +65,8 @@ def load_picks() -> list[Pick]:
             if not isinstance(p, dict):
                 continue
             filtered = {k: v for k, v in p.items() if k in known}
-            # Campos obrigatórios mínimos
             if "pick_id" not in filtered or "game" not in filtered:
                 continue
-            # Defaults para campos novos que podem não existir
             filtered.setdefault("fair_odd", 0.0)
             filtered.setdefault("edge_pct", 0.0)
             filtered.setdefault("sbo_open", None)
@@ -94,9 +91,8 @@ def save_pick(pick: Pick) -> None:
 
 def track_pending_picks() -> None:
     """
-    Para cada pick pendente, tenta apurar CLV real.
-    Condição: kickoff já passou há pelo menos 2h.
-    CLV = (odd_abertura_b365 / odd_fecho_sbo - 1) * 100
+    Apura CLV real para picks cujo kickoff já passou há 2h+.
+    CLV = (opening_odd / closing_sbo - 1) * 100
     """
     from scraper import fetch_sbo_closing_odds
 
@@ -106,7 +102,6 @@ def track_pending_picks() -> None:
     for pick in picks:
         if pick.clv_real is not None:
             continue
-
         try:
             dt = datetime.strptime(pick.kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
         except Exception:
@@ -126,14 +121,13 @@ def track_pending_picks() -> None:
             pick.clv_real = clv
             pick.tracked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
             changed = True
-            logger.info(f"CLV tracked: {pick.game} {pick.market} {pick.selection} → CLV={clv:+.1f}%")
+            logger.info(f"CLV tracked: {pick.game} {pick.selection} → {clv:+.1f}%")
 
     if changed:
         save_picks(picks)
 
 
 def _find_sbo_closing(pick: Pick, sbo: dict) -> Optional[float]:
-    """Encontra a odd SBObet correspondente ao pick."""
     def f(v):
         try:
             return float(v) if v else 0.0
@@ -142,7 +136,7 @@ def _find_sbo_closing(pick: Pick, sbo: dict) -> Optional[float]:
 
     home_team = pick.game.split(" vs ")[0]
 
-    if pick.market == "ML":
+    if pick.market in ("ML", "DNB"):
         ml = sbo.get("ML", {})
         home_in = home_team.lower() in pick.selection.lower()
         return f(ml.get("home" if home_in else "away")) or None

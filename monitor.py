@@ -2,7 +2,7 @@
 monitor.py — Orquestrador principal.
 """
 
-import os, json, logging, argparse
+import os, json, logging
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -31,7 +31,7 @@ def save_cache(cache: set) -> None:
 
 def run_normal():
     logger.info("=== Scan iniciado ===")
-    now_utc = datetime.now(timezone.utc)
+    now_utc    = datetime.now(timezone.utc)
     scan_label = now_utc.strftime("%d/%m %H:%M UTC")
 
     try:
@@ -46,7 +46,7 @@ def run_normal():
         value_bets = []
 
     sent_cache = load_cache()
-    counts = {"Elite": 0, "Strong": 0, "Value": 0}
+    counts     = {"Elite": 0, "Strong": 0, "Value": 0}
     new_alerts = 0
 
     for vb in value_bets:
@@ -106,19 +106,19 @@ def run_test():
         logger.error(f"{e}")
         return
     logger.info(f"TEST: {len(vbs)} value bets")
-    for vb in vbs[:10]:
+    for vb in vbs[:15]:
         logger.info(f"  {vb.level} {vb.game} | {vb.market} {vb.selection} @ {vb.odds_b365} (SBO={vb.odds_sbo}) edge={vb.edge_pct}%")
 
 
 if __name__ == "__main__":
+    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--test",   action="store_true")
     parser.add_argument("--report", action="store_true")
     parser.add_argument("--export", action="store_true")
     args = parser.parse_args()
 
-    if args.test:    run_test()
-    elif args.report: send_weekly_report()
-    elif args.export: send_export()
-    else:             run_normal()
-        
+    if args.test:      run_test()
+    elif args.report:  send_weekly_report()
+    elif args.export:  send_export()
+    else:              run_normal()

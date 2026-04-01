@@ -111,6 +111,21 @@ def calc_ou_quarter_above(main_odd: float, opp_odd: float) -> float | None:
         return None
 
 
+def _min_for_equiv(equiv_odd: float, market: str = "OU") -> float | None:
+    """
+    Dado que a odd equivalente de mercado é `equiv_odd`,
+    calcula a odd mínima aceitável (com edge >= MIN_EDGE_PCT) para essa linha.
+    Usa o modelo de calibração de model.py.
+    """
+    from model import estimate_fair_odd, minimum_acceptable_odd, MIN_ODD, MAX_ODD
+    if not (MIN_ODD <= equiv_odd <= MAX_ODD):
+        return None
+    fair = estimate_fair_odd(equiv_odd, market)
+    if fair is None:
+        return None
+    return minimum_acceptable_odd(fair)
+
+
 def format_equivalent_lines(market: str, selection: str,
                              opening_odd: float,
                              odds_x: float | None = None,
@@ -133,9 +148,13 @@ def format_equivalent_lines(market: str, selection: str,
                     # AH +0.25: mais fácil → odd abaixo do DNB
                     ah_easier = calc_ou_quarter_below(opening_odd, opp_dnb)
                     if ah_harder:
-                        lines.append(f"• AH {team} -0.25: {ah_harder:.2f}")
+                        min_h = _min_for_equiv(ah_harder, "AH")
+                        suffix = f" (mín: {min_h})" if min_h else ""
+                        lines.append(f"• AH {team} -0.25: {ah_harder:.2f}{suffix}")
                     if ah_easier:
-                        lines.append(f"• AH {team} +0.25: {ah_easier:.2f}")
+                        min_e = _min_for_equiv(ah_easier, "AH")
+                        suffix = f" (mín: {min_e})" if min_e else ""
+                        lines.append(f"• AH {team} +0.25: {ah_easier:.2f}{suffix}")
             except Exception:
                 pass
 
@@ -145,9 +164,13 @@ def format_equivalent_lines(market: str, selection: str,
             ah025 = calc_ah025(opening_odd, odds_x)
             team = selection.split(" ")[0] if " " in selection else selection
             if dnb:
-                lines.append(f"• DNB {team}: {dnb:.2f}")
+                min_dnb = _min_for_equiv(dnb, "AH")
+                suffix = f" (mín: {min_dnb})" if min_dnb else ""
+                lines.append(f"• DNB {team}: {dnb:.2f}{suffix}")
             if ah025:
-                lines.append(f"• AH {team} -0.25: {ah025:.2f}")
+                min_ah = _min_for_equiv(ah025, "AH")
+                suffix = f" (mín: {min_ah})" if min_ah else ""
+                lines.append(f"• AH {team} -0.25: {ah025:.2f}{suffix}")
 
     elif market == "Totals":
         parts = selection.split()
@@ -157,33 +180,53 @@ def format_equivalent_lines(market: str, selection: str,
             # Usa odd oposta real se disponível, senão estima
             opp = opp_odd if opp_odd else round(1 / (1 - 1 / opening_odd - 0.025), 2)
             if direction == "Over":
-                qb = calc_ou_quarter_below(opening_odd, opp)
-                qa = calc_ou_quarter_above(opening_odd, opp)
+                qb = calc_ou_quarter_below(opening_odd, opp)  # linha mais fácil → odd mais baixa
+                qa = calc_ou_quarter_above(opening_odd, opp)  # linha mais difícil → odd mais alta
                 if qb:
-                    lines.append(f"• Over {line - 0.25}: {qb:.2f}")
+                    # Over linha-0.25 é mais fácil → odd de mercado mais baixa → mín também mais baixo
+                    min_qb = _min_for_equiv(qb, "OU")
+                    suffix = f" (mín: {min_qb})" if min_qb else ""
+                    lines.append(f"• Over {line - 0.25}: {qb:.2f}{suffix}")
                 if qa:
-                    lines.append(f"• Over {line + 0.25}: {qa:.2f}")
+                    # Over linha+0.25 é mais difícil → odd de mercado mais alta → mín também mais alto
+                    min_qa = _min_for_equiv(qa, "OU")
+                    suffix = f" (mín: {min_qa})" if min_qa else ""
+                    lines.append(f"• Over {line + 0.25}: {qa:.2f}{suffix}")
             else:
                 # Under: linha abaixo (Under 2.25) é mais difícil → odd maior (calc_above)
                 # Under: linha acima (Under 2.75) é mais fácil → odd menor (calc_below)
                 qa = calc_ou_quarter_above(opening_odd, opp)  # Under 2.25: mais difícil
                 qb = calc_ou_quarter_below(opening_odd, opp)  # Under 2.75: mais fácil
                 if qa:
-                    lines.append(f"• Under {line - 0.25}: {qa:.2f}")
+                    min_qa = _min_for_equiv(qa, "OU")
+                    suffix = f" (mín: {min_qa})" if min_qa else ""
+                    lines.append(f"• Under {line - 0.25}: {qa:.2f}{suffix}")
                 if qb:
-                    lines.append(f"• Under {line + 0.25}: {qb:.2f}")
+                    min_qb = _min_for_equiv(qb, "OU")
+                    suffix = f" (mín: {min_qb})" if min_qb else ""
+                    lines.append(f"• Under {line + 0.25}: {qb:.2f}{suffix}")
         except Exception:
             pass
 
     elif market == "Spread":
+        # AH line-0.25 é mais fácil para o lado que aposta → odd MENOR (calc_below)
+        # AH line+0.25 é mais difícil para o lado que aposta → odd MAIOR (calc_above)
+        # Usa opp_odd (odd do lado oposto) para calibrar; se não disponível, estima
         parts = selection.rsplit(" ", 1)
         try:
             line = float(parts[-1])
             team = parts[0] if len(parts) > 1 else selection
-            q_below_odd = round(opening_odd * 0.94, 2)
-            q_above_odd = round(opening_odd * 1.07, 2)
-            lines.append(f"• AH {team} {line - 0.25:+.2f}: ~{q_below_odd:.2f}")
-            lines.append(f"• AH {team} {line + 0.25:+.2f}: ~{q_above_odd:.2f}")
+            opp = opp_odd if opp_odd else round(1 / (1 - 1 / opening_odd - 0.02), 2)
+            qb = calc_ou_quarter_below(opening_odd, opp)   # linha mais fácil → odd menor
+            qa = calc_ou_quarter_above(opening_odd, opp)   # linha mais difícil → odd maior
+            if qb:
+                min_qb = _min_for_equiv(qb, "AH")
+                suffix = f" (mín: {min_qb})" if min_qb else ""
+                lines.append(f"• AH {team} {line - 0.25:+.2f}: {qb:.2f}{suffix}")
+            if qa:
+                min_qa = _min_for_equiv(qa, "AH")
+                suffix = f" (mín: {min_qa})" if min_qa else ""
+                lines.append(f"• AH {team} {line + 0.25:+.2f}: {qa:.2f}{suffix}")
         except Exception:
             pass
 

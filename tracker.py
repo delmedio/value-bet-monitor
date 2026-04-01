@@ -39,7 +39,17 @@ class Pick:
 
 
 def make_pick_id(game: str, market: str, selection: str) -> str:
-    raw = f"{game}|{market}|{selection}"
+    # Para Totals: ignora Over/Under e linha — um pick por jogo por mercado
+    # Para Spread: ignora a linha — um pick por jogo por lado
+    # Para ML/DNB: usa selecção completa
+    if market == "Totals":
+        raw = f"{game}|Totals"
+    elif market == "Spread":
+        # Extrai só o nome da equipa sem a linha
+        team = selection.rsplit(" ", 1)[0] if " " in selection else selection
+        raw = f"{game}|Spread|{team}"
+    else:
+        raw = f"{game}|{market}|{selection}"
     return hashlib.md5(raw.encode()).hexdigest()[:10]
 
 

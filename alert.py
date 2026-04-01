@@ -92,10 +92,10 @@ def _format_equiv_line(label: str, odd: float | None, market: str) -> str | None
 
     min_odd = _equiv_min_odd(odd, market)
     if min_odd is None:
-        return f"• {label}: {odd:.2f}"
+        return f"• {label} | Mín: n/d"
 
     edge = round((odd / min_odd - 1) * 100, 2)
-    return f"• {label}: {odd:.2f} | Mín: {min_odd:.2f} | Edge: {edge:+.2f}%"
+    return f"• {label} | Mín: {min_odd:.2f} | Edge: {edge:+.2f}%"
 
 
 def calc_dnb(ml_odd: float, draw_odd: float) -> float | None:
@@ -530,4 +530,3 @@ def send_export() -> None:
         subject="📦 Value Bet Monitor — Export picks_log",
         html_body=f"<pre style='font-family:monospace;font-size:12px'>{payload}</pre>",
     )
-

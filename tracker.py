@@ -2,10 +2,13 @@
 tracker.py — Guarda picks e apura CLV real.
 
 CLV real = (odd abertura Bet365 / odd fecho Sbobet - 1) * 100
-Ex: entrámos a 2.30 na Bet365 e SBO fecha a 2.10 → CLV = +9.5%
+Ex: entrámos a 2.30 na Bet365 e SBO fecha a 2.10 -> CLV = +9.5%
 """
 
-import json, hashlib, logging
+import hashlib
+import json
+import logging
+from collections import defaultdict
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
@@ -153,3 +156,79 @@ def _find_sbo_closing(pick: Pick, sbo: dict) -> Optional[float]:
         return f(tot.get("under") or tot.get("away")) or None
 
     return None
+
+
+def get_picks_for_report(days: int = 7) -> dict:
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+    picks = load_picks()
+
+    recent = []
+    for pick in picks:
+        try:
+            kickoff_dt = datetime.strptime(pick.kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if kickoff_dt >= since:
+            recent.append(pick)
+
+    tracked = [pick for pick in recent if pick.clv_real is not None]
+    pending = [pick for pick in recent if pick.clv_real is None]
+    total_tracked = len(tracked)
+    beat_line_count = sum(1 for pick in tracked if pick.clv_real > 0)
+    clv_medio = round(sum(pick.clv_real for pick in tracked) / total_tracked, 2) if tracked else 0.0
+    beat_line_pct = round(beat_line_count / total_tracked * 100, 1) if tracked else 0.0
+
+    return {
+        "tracked": tracked,
+        "pending": pending,
+        "total_picks": len(recent),
+        "total_tracked": total_tracked,
+        "clv_medio": clv_medio,
+        "beat_line_count": beat_line_count,
+        "beat_line_pct": beat_line_pct,
+    }
+
+
+def get_learning_snapshot(min_samples: int = 5) -> dict:
+    tracked = [pick for pick in load_picks() if pick.clv_real is not None]
+    overall_count = len(tracked)
+    overall_avg_clv = round(sum(pick.clv_real for pick in tracked) / overall_count, 2) if tracked else 0.0
+    overall_beat_pct = round(sum(1 for pick in tracked if pick.clv_real > 0) / overall_count * 100, 1) if tracked else 0.0
+
+    grouped: dict[str, list[Pick]] = defaultdict(list)
+    for pick in tracked:
+        grouped[pick.market].append(pick)
+
+    by_market = {}
+    for market, picks in grouped.items():
+        count = len(picks)
+        avg_clv = round(sum(pick.clv_real for pick in picks) / count, 2)
+        beat_pct = round(sum(1 for pick in picks if pick.clv_real > 0) / count * 100, 1)
+        avg_edge = round(sum(pick.edge_pct for pick in picks) / count, 2)
+
+        if count < min_samples:
+            recommendation = "Amostra curta; manter observacao antes de mexer no threshold."
+        elif avg_clv >= 5 and beat_pct >= 55:
+            recommendation = "Mercado forte; manter prioridade e threshold atual."
+        elif avg_clv >= 2:
+            recommendation = "Mercado saudavel; continuar a recolher amostra."
+        elif avg_clv >= 0:
+            recommendation = "Mercado neutro; exige selecao mais cuidadosa."
+        else:
+            recommendation = "Mercado fraco; convem apertar o minimo ou reduzir exposicao."
+
+        by_market[market] = {
+            "tracked": count,
+            "avg_clv": avg_clv,
+            "beat_line_pct": beat_pct,
+            "avg_edge": avg_edge,
+            "recommendation": recommendation,
+        }
+
+    return {
+        "tracked_total": overall_count,
+        "overall_avg_clv": overall_avg_clv,
+        "overall_beat_line_pct": overall_beat_pct,
+        "by_market": by_market,
+    }

@@ -189,7 +189,7 @@ def format_equivalent_lines(market: str, selection: str,
 
     if not lines:
         return ""
-    return "\n━━━━━━━━━━━━━━━━━━━━\nLinhas equivalentes mínimas:\n" + "\n".join(lines)
+    return "\n━━━━━━━━━━━━━━━━━━━━\nLinhas equivalentes:\n" + "\n".join(lines)
 
 
 # ─── Alerta principal ─────────────────────────────────────────────────────────
@@ -449,4 +449,3 @@ def send_export() -> None:
         subject="📦 Value Bet Monitor — Export picks_log",
         html_body=f"<pre style='font-family:monospace;font-size:12px'>{data}</pre>",
     )
-

@@ -1,39 +1,121 @@
 """
 model.py — Modelo de calibração para detecção de early value bets.
 
-Calibrado com 703 picks reais (Special One 182 + Andrey2505 521 Bet365).
-Factores contínuos segmentados por mercado:
+Base revisto com dados reais do separador Bets do Special One.
+A principal conclusão dessa amostra:
 
-  1X2 (ML/DNB): factor = 0.9927 - 0.0605 * odd  (mais margem, mais drift)
-  AH  (Spread): factor = 0.9980 - 0.0520 * odd  (mais eficiente, menos drift)
-  OU  (Totals): factor = 0.9955 - 0.0560 * odd  (intermédio)
+  - ML puro e claramente mais fraco que DNB
+  - DNB, AH e Totals sustentam melhor CLV real
+  - odds altas em ML devem ser muito mais filtradas
 
-Range: 1.50 – 2.80 | Threshold: edge >= 3%
+O modelo passou a usar bandas por mercado, em vez de um factor linear unico.
 """
 
 import json
 from pathlib import Path
 
-MIN_EDGE_PCT     = 3.0
-MIN_ODD          = 1.50
-MAX_ODD          = 2.80
+MIN_ODD = 1.50
 MIN_KICKOFF_DATE = "2026-04-10"
 LEARNING_PICKS_FILE = Path("picks_log.json")
 
+MARKET_PROFILES = {
+    # Match Result puro: manter bem apertado.
+    "ML": {
+        "max_odd": 2.20,
+        "bands": [
+            (1.50, 1.80, 0.979, 7.0),
+            (1.80, 2.00, 0.987, 7.5),
+            (2.00, 2.20, 0.976, 8.0),
+        ],
+    },
+    # DNB mostrou-se muito mais robusto no histórico.
+    "DNB": {
+        "max_odd": 2.20,
+        "bands": [
+            (1.50, 1.80, 0.983, 4.5),
+            (1.80, 2.00, 0.923, 4.5),
+            (2.00, 2.20, 0.903, 5.0),
+        ],
+    },
+    "AH": {
+        "max_odd": 2.20,
+        "bands": [
+            (1.50, 2.00, 0.958, 4.0),
+            (2.00, 2.20, 0.872, 5.0),
+        ],
+    },
+    "OU": {
+        "max_odd": 2.20,
+        "bands": [
+            (1.50, 1.80, 0.990, 4.0),
+            (1.80, 2.00, 0.932, 4.5),
+            (2.00, 2.20, 0.892, 5.0),
+        ],
+    },
+}
 
-def get_calibration_factor(odd: float, market: str = "1X2") -> float:
+
+def _normalize_market(market: str) -> str:
+    aliases = {
+        "1X2": "ML",
+        "Match Result": "ML",
+        "Spread": "AH",
+        "Totals": "OU",
+    }
+    return aliases.get(market, market)
+
+
+def _market_aliases(market: str) -> tuple[str, ...]:
+    market = _normalize_market(market)
     if market == "AH":
-        return round(0.9980 - 0.0520 * odd, 4)
-    elif market == "OU":
-        return round(0.9955 - 0.0560 * odd, 4)
-    else:  # 1X2, ML, DNB
-        return round(0.9927 - 0.0605 * odd, 4)
+        return ("Spread",)
+    if market == "OU":
+        return ("Totals",)
+    if market == "DNB":
+        return ("DNB",)
+    return ("ML",)
 
 
-def estimate_fair_odd(opening_odd: float, market: str = "1X2") -> float | None:
-    if not (MIN_ODD <= opening_odd <= MAX_ODD):
+def _profile_for(market: str) -> dict:
+    return MARKET_PROFILES[_normalize_market(market)]
+
+
+def get_calibration_factor(odd: float, market: str = "ML") -> float | None:
+    profile = _profile_for(market)
+    if not (MIN_ODD <= odd <= profile["max_odd"]):
         return None
-    return round(opening_odd * get_calibration_factor(opening_odd, market), 3)
+
+    for lower, upper, factor, _ in profile["bands"]:
+        if lower <= odd < upper:
+            return factor
+
+    # Inclui o limite superior da ultima banda.
+    last_lower, last_upper, last_factor, _ = profile["bands"][-1]
+    if last_lower <= odd <= last_upper:
+        return last_factor
+    return None
+
+
+def base_min_edge(market: str = "ML", opening_odd: float | None = None) -> float:
+    profile = _profile_for(market)
+    if opening_odd is None:
+        return profile["bands"][0][3]
+
+    for lower, upper, _, min_edge in profile["bands"]:
+        if lower <= opening_odd < upper:
+            return min_edge
+
+    last_lower, last_upper, _, last_min_edge = profile["bands"][-1]
+    if last_lower <= opening_odd <= last_upper:
+        return last_min_edge
+    return last_min_edge
+
+
+def estimate_fair_odd(opening_odd: float, market: str = "ML") -> float | None:
+    factor = get_calibration_factor(opening_odd, market)
+    if factor is None:
+        return None
+    return round(opening_odd * factor, 3)
 
 
 def calculate_edge(opening_odd: float, fair_odd: float) -> float:
@@ -42,34 +124,26 @@ def calculate_edge(opening_odd: float, fair_odd: float) -> float:
     return round((opening_odd / fair_odd - 1) * 100, 2)
 
 
-def minimum_acceptable_odd(fair_odd: float,
-                            min_edge: float = MIN_EDGE_PCT) -> float:
+def minimum_acceptable_odd(fair_odd: float, min_edge: float) -> float:
     return round(fair_odd * (1 + min_edge / 100), 3)
 
 
 def ev_level(edge_pct: float) -> str:
     if edge_pct >= 20:
         return "🔥 Elite"
-    elif edge_pct >= 15:
+    if edge_pct >= 15:
         return "✅ Strong"
     return "📊 Value"
 
 
-def _market_aliases(market: str) -> tuple[str, ...]:
-    if market == "AH":
-        return ("Spread",)
-    if market == "OU":
-        return ("Totals",)
-    return ("ML", "DNB")
-
-
-def adaptive_min_edge(market: str = "1X2") -> float:
+def adaptive_min_edge(market: str = "ML", opening_odd: float | None = None) -> float:
     """
-    Ajusta o threshold por mercado com base no CLV tracked.
-    O ajuste e pequeno e so entra com amostra suficiente.
+    Ajuste pequeno por mercado com base no tracking real do proprio bot.
+    Parte de uma base mais conservadora calibrada nos dados historicos.
     """
+    base_edge = base_min_edge(market, opening_odd)
     if not LEARNING_PICKS_FILE.exists():
-        return MIN_EDGE_PCT
+        return base_edge
 
     try:
         raw = json.loads(LEARNING_PICKS_FILE.read_text())
@@ -78,13 +152,12 @@ def adaptive_min_edge(market: str = "1X2") -> float:
             if isinstance(pick, dict)
             and pick.get("market") in _market_aliases(market)
             and isinstance(pick.get("clv_real"), (int, float))
-            and isinstance(pick.get("edge_pct"), (int, float))
         ]
     except Exception:
-        return MIN_EDGE_PCT
+        return base_edge
 
     if len(tracked) < 15:
-        return MIN_EDGE_PCT
+        return base_edge
 
     avg_clv = sum(pick["clv_real"] for pick in tracked) / len(tracked)
     beat_pct = sum(1 for pick in tracked if pick["clv_real"] > 0) / len(tracked) * 100
@@ -94,31 +167,33 @@ def adaptive_min_edge(market: str = "1X2") -> float:
         adjustment += 1.0
     elif avg_clv < 2 or beat_pct < 52:
         adjustment += 0.5
-    elif avg_clv >= 6 and beat_pct >= 60:
+    elif avg_clv >= 7 and beat_pct >= 60:
         adjustment -= 0.5
 
-    return round(min(max(MIN_EDGE_PCT + adjustment, 2.5), 5.0), 2)
+    return round(min(max(base_edge + adjustment, 3.5), 9.0), 2)
 
 
-def is_value_bet(opening_odd: float, market: str = "1X2") -> dict | None:
+def is_value_bet(opening_odd: float, market: str = "ML") -> dict | None:
     """
-    Verifica se uma odd tem value com base no modelo calibrado.
-    market: "1X2" (ML/DNB), "AH" (Spread), "OU" (Totals)
-    Devolve dict ou None.
+    market:
+      - ML   : Match Result
+      - DNB  : Draw No Bet
+      - AH   : Asian Handicap
+      - OU   : Totals / Over-Under
     """
-    if not (MIN_ODD <= opening_odd <= MAX_ODD):
-        return None
     fair = estimate_fair_odd(opening_odd, market)
     if fair is None:
         return None
+
     edge = calculate_edge(opening_odd, fair)
-    min_edge = adaptive_min_edge(market)
+    min_edge = adaptive_min_edge(market, opening_odd)
     if edge < min_edge:
         return None
+
     return {
         "fair_odd": fair,
         "edge_pct": edge,
-        "min_odd":  minimum_acceptable_odd(fair, min_edge=min_edge),
+        "min_odd": minimum_acceptable_odd(fair, min_edge=min_edge),
         "min_edge_pct": min_edge,
-        "level":    ev_level(edge),
+        "level": ev_level(edge),
     }

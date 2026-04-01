@@ -41,6 +41,7 @@ jobs:
           ODDS_API_IO_KEY: ${{ secrets.ODDS_API_IO_KEY }}
         run: |
           MODE="${{ github.event.inputs.mode }}"
+
           if [ "$MODE" = "test" ]; then
             python monitor.py --test
           elif [ "$MODE" = "report" ]; then
@@ -55,8 +56,7 @@ jobs:
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
-          git add -f sent_alerts.json picks_log.json 2>/dev/null || true
+          git add -f sent_alerts.json picks_log.json odds_state.json 2>/dev/null || true
           git commit -m "cache: $(date -u '+%Y-%m-%d %H:%M')" || true
           git pull --rebase origin main || true
           git push origin main || true
-

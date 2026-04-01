@@ -454,7 +454,7 @@ def fetch_value_bets() -> list[ValueBet]:
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
     min_dt = datetime.strptime(MIN_KICKOFF_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    max_dt = now + timedelta(days=21)
+    max_dt = now + timedelta(days=35)
 
     def _ev_date_ok(ev):
         date_str = ev.get("date", ev.get("startTime", ""))

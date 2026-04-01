@@ -2,13 +2,20 @@
 scraper.py — Scraper via odds-api.io
 
 Fluxo:
-  1. /v3/events por slug de liga → eventos das ligas alvo
-  2. /v3/odds por evento → odds Bet365 + Sbobet
-  3. Modelo calibrado analisa Bet365 → detecta early value (SBO=None)
-  4. Sbobet guardada só para CLV report — não influencia detecção
+  1. Full scan: /v3/events por slug de liga -> eventos das ligas alvo
+  2. Incremental scan: /v3/odds/updated -> apenas eventos alterados
+  3. /v3/odds/multi -> odds Bet365 + Sbobet em batch
+  4. Modelo analisa Bet365 -> detecta early value (SBO=None)
+  5. Sbobet fica reservada para tracking de CLV
 """
 
-import os, time, logging, requests
+import json
+import os
+import time
+import logging
+from pathlib import Path
+
+import requests
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass
 from typing import Optional
@@ -19,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 ODDS_API_KEY = os.environ.get("ODDS_API_IO_KEY", "")
 BASE_URL     = "https://api.odds-api.io/v3"
+STATE_FILE   = Path("odds_state.json")
 
 ALLOWED_LEAGUES = {
     "Portugal - Liga Portugal",
@@ -193,6 +201,24 @@ def _extract_markets(bookmaker_markets: list) -> dict:
     return result
 
 
+def _load_state() -> dict:
+    if not STATE_FILE.exists():
+        return {}
+    try:
+        data = json.loads(STATE_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_state(state: dict) -> None:
+    STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def _chunked(items: list[int], size: int) -> list[list[int]]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
 def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     """
     Analisa um evento e devolve o melhor pick (maior edge, SBO ainda fechada).
@@ -355,28 +381,62 @@ def fetch_events() -> list[dict]:
     return all_events
 
 
+def fetch_updated_event_ids(since_ts: int) -> list[int]:
+    """
+    Usa /odds/updated para ir buscar apenas eventos alterados desde o ultimo
+    scan recente. A API espera o sport slug em minusculas: football.
+    """
+    try:
+        data = _get(
+            "/odds/updated",
+            {
+                "sport": "football",
+                "since": since_ts,
+                "bookmaker": "Bet365",
+            },
+        )
+    except Exception as e:
+        logger.warning(f"fetch_updated_event_ids: {e}")
+        return []
+
+    if isinstance(data, dict):
+        data = data.get("data", data.get("events", []))
+    if not isinstance(data, list):
+        return []
+
+    event_ids = []
+    for item in data:
+        event_id = item.get("id") or item.get("eventId")
+        if event_id:
+            try:
+                event_ids.append(int(event_id))
+            except Exception:
+                continue
+    logger.info(f"fetch_updated_event_ids: {len(event_ids)} eventos alterados")
+    return event_ids
+
+
 def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
-    """Busca odds por evento. Se Sbobet der 404, tenta só Bet365 (early bet)."""
+    """Busca odds em batch via /odds/multi sem perder mercados."""
     results = []
-    for event_id in event_ids:
+    for batch in _chunked(event_ids, 10):
         data = None
         try:
-            data = _get("/odds", {"eventId": event_id,
-                                  "bookmakers": "Bet365,Sbobet"})
+            data = _get(
+                "/odds/multi",
+                {
+                    "eventIds": ",".join(str(event_id) for event_id in batch),
+                    "bookmakers": "Bet365,Sbobet",
+                },
+            )
         except Exception as e:
-            if "404" in str(e):
-                try:
-                    data = _get("/odds", {"eventId": event_id,
-                                          "bookmakers": "Bet365"})
-                except Exception as e2:
-                    logger.warning(f"fetch_odds {event_id}: {e2}")
-            else:
-                logger.warning(f"fetch_odds {event_id}: {e}")
+            logger.warning(f"fetch_odds_multi {batch}: {e}")
+            continue
 
-        if isinstance(data, dict) and data:
-            results.append(data)
-        elif isinstance(data, list) and data:
+        if isinstance(data, list) and data:
             results.extend(data)
+        elif isinstance(data, dict) and data:
+            results.append(data)
 
     logger.info(f"fetch_odds_multi: {len(results)} eventos com odds")
     return results
@@ -384,33 +444,54 @@ def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
 
 def fetch_value_bets() -> list[ValueBet]:
     """Detecta early value bets na Bet365 usando o modelo calibrado."""
-    events = fetch_events()
-    if not events:
-        return []
-
-    relevant = [ev for ev in events if _get_league_name(ev) in ALLOWED_LEAGUES]
-    logger.info(f"Eventos nas ligas alvo: {len(relevant)}")
-    if not relevant:
-        return []
-
-    # Filtra por janela de datas: MIN_KICKOFF_DATE até +35 dias
-    now    = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
     min_dt = datetime.strptime(MIN_KICKOFF_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     max_dt = now + timedelta(days=35)
+    state = _load_state()
 
-    def _date_ok(ev):
+    def _date_ok(ev: dict) -> bool:
         try:
             dt = datetime.fromisoformat(
-                ev.get("date", ev.get("startTime", "")).replace("Z", "+00:00"))
+                ev.get("date", ev.get("startTime", "")).replace("Z", "+00:00")
+            )
             return min_dt <= dt <= max_dt
         except Exception:
             return False
 
-    relevant = [ev for ev in relevant if _date_ok(ev)]
-    logger.info(f"Eventos na janela: {len(relevant)}")
+    event_ids: list[int] = []
+    use_incremental = False
+    last_since = state.get("last_updated_since")
 
-    event_ids = [ev.get("id") for ev in relevant if ev.get("id")]
+    if isinstance(last_since, int):
+        age_seconds = int(now.timestamp()) - last_since
+        if 0 <= age_seconds <= 55:
+            event_ids = fetch_updated_event_ids(last_since)
+            use_incremental = True
+
+    if not use_incremental:
+        events = fetch_events()
+        if not events:
+            return []
+
+        relevant = [ev for ev in events if _get_league_name(ev) in ALLOWED_LEAGUES]
+        logger.info(f"Eventos nas ligas alvo: {len(relevant)}")
+        if not relevant:
+            return []
+
+        relevant = [ev for ev in relevant if _date_ok(ev)]
+        logger.info(f"Eventos na janela: {len(relevant)}")
+        event_ids = [ev.get("id") for ev in relevant if ev.get("id")]
+    elif not event_ids:
+        logger.info("Scan incremental sem alteracoes")
+        state["last_updated_since"] = int(now.timestamp())
+        _save_state(state)
+        return []
+
     odds_data = fetch_odds_multi(event_ids)
+    odds_data = [
+        ev for ev in odds_data
+        if _get_league_name(ev) in ALLOWED_LEAGUES and _date_ok(ev)
+    ]
 
     value_bets = []
     for event_odds in odds_data:
@@ -421,6 +502,8 @@ def fetch_value_bets() -> list[ValueBet]:
         except Exception as e:
             logger.warning(f"_analyse_event: {e}")
 
+    state["last_updated_since"] = int(now.timestamp())
+    _save_state(state)
     logger.info(f"Value bets encontradas: {len(value_bets)}")
     return value_bets
 

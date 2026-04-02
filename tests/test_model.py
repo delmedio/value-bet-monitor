@@ -15,6 +15,7 @@ from model import (
     base_min_edge,
     ev_level,
     min_kickoff_date,
+    _timing_bonus,
 )
 
 
@@ -131,6 +132,35 @@ class TestEvLevel:
 
     def test_boundary_strong(self):
         assert "Strong" in ev_level(15)
+
+
+# ── min_kickoff_date ─────────────────────────────────────────────────────────
+
+# ── _timing_bonus ────────────────────────────────────────────────────────────
+
+class TestTimingBonus:
+    def test_no_timing_data(self):
+        """Sem dados de timing retorna 0."""
+        tracked = [{"clv_real": 5.0, "market": "ML"} for _ in range(20)]
+        assert _timing_bonus(tracked) == 0.0
+
+    def test_super_early_strong_clv(self):
+        """Super earlys (7d+) com bom CLV devem relaxar o threshold (-0.5)."""
+        super_early = [{"clv_real": 8.0, "hours_to_kickoff": 200} for _ in range(10)]
+        standard = [{"clv_real": 2.0, "hours_to_kickoff": 55} for _ in range(10)]
+        assert _timing_bonus(super_early + standard) == -0.5
+
+    def test_super_early_weak_clv(self):
+        """Super earlys com CLV negativo devem apertar (+0.5)."""
+        super_early = [{"clv_real": -3.0, "hours_to_kickoff": 200} for _ in range(10)]
+        standard = [{"clv_real": 5.0, "hours_to_kickoff": 55} for _ in range(10)]
+        assert _timing_bonus(super_early + standard) == 0.5
+
+    def test_few_samples_returns_zero(self):
+        """Com poucas amostras, sem ajuste."""
+        super_early = [{"clv_real": 8.0, "hours_to_kickoff": 200} for _ in range(3)]
+        standard = [{"clv_real": 2.0, "hours_to_kickoff": 55} for _ in range(3)]
+        assert _timing_bonus(super_early + standard) == 0.0
 
 
 # ── min_kickoff_date ─────────────────────────────────────────────────────────

@@ -10,12 +10,17 @@ A principal conclusão dessa amostra:
 
 O modelo passou a usar bandas por mercado, em vez de um factor linear unico.
 """
+from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 MIN_ODD = 1.50
-MIN_KICKOFF_DATE = "2026-04-10"
+
+
+def min_kickoff_date() -> str:
+    return date.today().isoformat()
 LEARNING_PICKS_FILE = Path("picks_log.json")
 
 MARKET_PROFILES = {

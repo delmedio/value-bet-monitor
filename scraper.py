@@ -4,15 +4,16 @@ scraper.py — Scraper via odds-api.io
 Fluxo:
   1. Full scan: /v3/events por slug de liga -> eventos das ligas alvo
   2. Incremental scan: /v3/odds/updated -> apenas eventos alterados
-  3. /v3/odds/multi -> odds Bet365 + Sbobet em batch
-  4. Modelo analisa Bet365 -> detecta early value (SBO=None)
-  5. Sbobet fica reservada para tracking de CLV
+  3. /v3/odds/multi -> odds Bet365 + SingBet em batch
+  4. Modelo analisa Bet365 -> detecta early value (SingBet ainda fechada)
+  5. SingBet fica reservada para tracking de CLV
 """
 
 import json
 import os
 import time
 import logging
+import unicodedata
 from pathlib import Path
 
 import requests
@@ -131,6 +132,7 @@ class ValueBet:
     home_team: str
     away_team: str
     league: str
+    league_slug: str
     kickoff: str
     market: str       # ML / DNB / Spread / Totals
     selection: str
@@ -145,7 +147,7 @@ class ValueBet:
     odds_x: Optional[float] = None   # empate (para ML/DNB)
     opp_odd: Optional[float] = None  # odd oposta OU (para quarter lines)
     bet_href: str = ""
-    odds_sbo: Optional[float] = None  # Sbobet abertura (para CLV)
+    odds_singbet: Optional[float] = None  # SingBet abertura (para CLV)
 
 
 def _get(path: str, params: dict, retries: int = 3) -> dict | list:
@@ -219,21 +221,113 @@ def _chunked(items: list[int], size: int) -> list[list[int]]:
     return [items[i:i + size] for i in range(0, len(items), size)]
 
 
+def _normalize_name(name: str) -> str:
+    text = unicodedata.normalize("NFKD", name or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower().replace("-", " ").replace(".", " ")
+    return " ".join(text.split())
+
+
+def _historical_range(kickoff: str) -> tuple[str, str] | tuple[None, None]:
+    try:
+        dt = datetime.strptime(kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
+    except Exception:
+        return None, None
+
+    start = (dt - timedelta(hours=18)).isoformat().replace("+00:00", "Z")
+    end = (dt + timedelta(hours=18)).isoformat().replace("+00:00", "Z")
+    return start, end
+
+
+def fetch_historical_event_id(
+    league_slug: str,
+    kickoff: str,
+    home_team: str,
+    away_team: str,
+) -> int | None:
+    if not league_slug:
+        return None
+
+    range_from, range_to = _historical_range(kickoff)
+    if not range_from or not range_to:
+        return None
+
+    try:
+        data = _get(
+            "/historical/events",
+            {
+                "sport": "football",
+                "league": league_slug,
+                "from": range_from,
+                "to": range_to,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"fetch_historical_event_id {league_slug}: {e}")
+        return None
+
+    if isinstance(data, dict):
+        data = data.get("data", data.get("events", []))
+    if not isinstance(data, list):
+        return None
+
+    target_home = _normalize_name(home_team)
+    target_away = _normalize_name(away_team)
+    matches = []
+    for event in data:
+        if (
+            _normalize_name(event.get("home", "")) == target_home
+            and _normalize_name(event.get("away", "")) == target_away
+        ):
+            matches.append(event)
+
+    if not matches:
+        return None
+
+    try:
+        kickoff_dt = datetime.strptime(kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
+        matches.sort(
+            key=lambda event: abs(
+                datetime.fromisoformat(event.get("date", "").replace("Z", "+00:00")) - kickoff_dt
+            )
+        )
+    except Exception:
+        pass
+
+    event_id = matches[0].get("id")
+    try:
+        return int(event_id) if event_id is not None else None
+    except Exception:
+        return None
+
+
+def _extract_bookmaker_odds(data: dict, bookmaker_name: str) -> dict:
+    bookmakers = data.get("bookmakers", {}) if isinstance(data, dict) else {}
+    bookmaker_rows = bookmakers.get(bookmaker_name, [])
+    result = {}
+    for mkt in bookmaker_rows:
+        name = mkt.get("name", "")
+        odds_list = mkt.get("odds", [])
+        if odds_list:
+            result[name] = odds_list[0]
+    return result
+
+
 def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     """
-    Analisa um evento e devolve o melhor pick (maior edge, SBO ainda fechada).
+    Analisa um evento e devolve o melhor pick (maior edge, SingBet ainda fechada).
     Candidatos por ordem: AH principal → DNB real → ML
     Totals: Over vs Under — escolhe o de maior edge.
     """
     bms      = event_data.get("bookmakers", {})
     b365_raw = bms.get("Bet365", [])
-    sbo_raw  = bms.get("Sbobet", [])
+    singbet_raw  = bms.get("SingBet", [])
 
     if not b365_raw:
         return None
 
     b365 = _extract_markets(b365_raw)
-    sbo  = _extract_markets(sbo_raw) if sbo_raw else {}
+    singbet  = _extract_markets(singbet_raw) if singbet_raw else {}
 
     home  = event_data.get("home", "")
     away  = event_data.get("away", "")
@@ -241,6 +335,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
 
     league_raw = event_data.get("league", event_data.get("leagueName", ""))
     league = league_raw.get("name", "") if isinstance(league_raw, dict) else league_raw
+    league_slug = league_raw.get("slug", "") if isinstance(league_raw, dict) else event_data.get("leagueSlug", "")
 
     kickoff  = _kickoff_str(event_data.get("date", event_data.get("startTime", "")))
     event_id = event_data.get("id", 0)
@@ -266,8 +361,9 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     b_ml  = b365.get("ML", {})
     b_ah  = b365.get("Spread", {})
     b_dnb = b365.get("Draw No Bet", {})
-    sbo_ml = sbo.get("ML", {})
-    sbo_ah = sbo.get("Spread", {})
+    singbet_ml = singbet.get("ML", {})
+    singbet_ah = singbet.get("Spread", {})
+    singbet_dnb = singbet.get("Draw No Bet", {})
 
     draw_odd = _float(b_ml.get("draw")) or None
 
@@ -279,40 +375,41 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
         ah_odd = _float(b_ah.get(side))
         ah_hdp = _float(b_ah.get("hdp") or 0)
         if ah_odd:
-            sbo_odd = _float(sbo_ah.get(side)) or None
+            singbet_odd = _float(singbet_ah.get(side)) or None
             if ah_hdp == 0:
                 # AH 0 e equivalente a DNB. Se a API ja trouxer DNB, evitamos
                 # alertas duplicados para o mesmo jogo.
                 if not dnb_odd:
                     candidates.append((ah_odd, "DNB", team,
-                                       None, b_ah.get("href", ""), sbo_odd))
+                                       None, b_ah.get("href", ""), singbet_odd))
             else:
                 sign = f"{ah_hdp:+.2f}"
                 candidates.append((ah_odd, "Spread", f"{team} {sign}".strip(),
-                                    ah_hdp, b_ah.get("href", ""), sbo_odd))
+                                    ah_hdp, b_ah.get("href", ""), singbet_odd))
 
         # 2. Draw No Bet real da API
         if dnb_odd:
+            singbet_odd = _float(singbet_dnb.get(side)) or None
             candidates.append((dnb_odd, "DNB", team,
-                                None, b_dnb.get("href", ""), None))
+                                None, b_dnb.get("href", ""), singbet_odd))
 
         # 3. ML directo
         ml_odd = _float(b_ml.get(side))
         if ml_odd:
-            sbo_odd = _float(sbo_ml.get(side)) or None
+            singbet_odd = _float(singbet_ml.get(side)) or None
             candidates.append((ml_odd, "ML", team,
-                                None, b_ml.get("href", ""), sbo_odd))
+                                None, b_ml.get("href", ""), singbet_odd))
 
-        for odd, mkt, sel, hdp_val, href, sbo_odd in candidates:
-            # Só early bets — SBO ainda não abriu
-            if sbo_odd is not None:
+        for odd, mkt, sel, hdp_val, href, singbet_odd in candidates:
+            # Só early bets — SingBet ainda não abriu
+            if singbet_odd is not None:
                 continue
             result = is_value_bet(odd, market=MKT_TYPE.get(mkt, "ML"))
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
                 best_vb = ValueBet(
                     game=game, home_team=home, away_team=away,
-                    league=league, kickoff=kickoff,
+                    league=league, league_slug=league_slug, kickoff=kickoff,
                     market=mkt, selection=sel,
                     odds_b365=odd,
                     fair_odd=result["fair_odd"],
@@ -323,12 +420,12 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
                     hdp=hdp_val,
                     odds_x=draw_odd if mkt in ("ML", "DNB") else None,
                     bet_href=href,
-                    odds_sbo=None,
+                    odds_singbet=None,
                 )
 
     # ── Over/Under (Totals) — um pick por jogo ────────────────────────────────
     b_ou   = b365.get("Totals", {})
-    sbo_ou = sbo.get("Totals", {})
+    singbet_ou = singbet.get("Totals", {})
     if b_ou:
         line      = _float(b_ou.get("max") or b_ou.get("hdp") or 0)
         over_odd  = _float(b_ou.get("over") or b_ou.get("home"))
@@ -337,16 +434,16 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
 
         for direction, odd, opp in [("Over", over_odd, under_odd),
                                     ("Under", under_odd, over_odd)]:
-            sbo_key = "over" if direction == "Over" else "under"
-            sbo_odd = _float(sbo_ou.get(sbo_key) or 0) or None
-            if sbo_odd is not None:
+            singbet_key = "over" if direction == "Over" else "under"
+            singbet_odd = _float(singbet_ou.get(singbet_key) or 0) or None
+            if singbet_odd is not None:
                 continue
             result = is_value_bet(odd, market="OU")
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
                 best_vb = ValueBet(
                     game=game, home_team=home, away_team=away,
-                    league=league, kickoff=kickoff,
+                    league=league, league_slug=league_slug, kickoff=kickoff,
                     market="Totals", selection=f"{direction} {line}",
                     odds_b365=odd,
                     fair_odd=result["fair_odd"],
@@ -356,7 +453,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
                     event_id=event_id,
                     line=line, opp_odd=opp,
                     bet_href=href_ou,
-                    odds_sbo=None,
+                    odds_singbet=None,
                 )
 
     return best_vb
@@ -433,7 +530,7 @@ def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
                 "/odds/multi",
                 {
                     "eventIds": ",".join(str(event_id) for event_id in batch),
-                    "bookmakers": "Bet365,Sbobet",
+                    "bookmakers": "Bet365,SingBet",
                 },
             )
         except Exception as e:
@@ -515,19 +612,42 @@ def fetch_value_bets() -> list[ValueBet]:
     return value_bets
 
 
-def fetch_sbo_closing_odds(event_id: int) -> dict:
-    """Busca odds de fecho Sbobet para apurar CLV real."""
+def _fetch_historical_singbet_odds(event_id: int) -> dict:
+    data = _get("/historical/odds", {"eventId": event_id, "bookmakers": "SingBet"})
+    return _extract_bookmaker_odds(data, "SingBet")
+
+
+def fetch_singbet_closing_odds(
+    event_id: int,
+    league_slug: str = "",
+    kickoff: str = "",
+    home_team: str = "",
+    away_team: str = "",
+) -> tuple[dict, int | None]:
+    """
+    Busca odds históricas de fecho da SingBet para apurar CLV real.
+    Primeiro tenta o event_id já guardado; se falhar, resolve o id histórico
+    através de /historical/events.
+    """
     try:
-        data = _get("/odds", {"eventId": event_id, "bookmakers": "Sbobet"})
-        bms  = data.get("bookmakers", {}) if isinstance(data, dict) else {}
-        sbo  = bms.get("Sbobet", [])
-        result = {}
-        for mkt in sbo:
-            name = mkt.get("name", "")
-            odds_list = mkt.get("odds", [])
-            if odds_list:
-                result[name] = odds_list[0]
-        return result
+        direct = _fetch_historical_singbet_odds(event_id)
+        if direct:
+            return direct, event_id
     except Exception as e:
-        logger.warning(f"fetch_sbo_closing_odds {event_id}: {e}")
-        return {}
+        logger.warning(f"fetch_singbet_closing_odds direct {event_id}: {e}")
+
+    historical_event_id = fetch_historical_event_id(
+        league_slug=league_slug,
+        kickoff=kickoff,
+        home_team=home_team,
+        away_team=away_team,
+    )
+    if not historical_event_id:
+        return {}, None
+
+    try:
+        historical = _fetch_historical_singbet_odds(historical_event_id)
+        return historical, historical_event_id
+    except Exception as e:
+        logger.warning(f"fetch_singbet_closing_odds historical {historical_event_id}: {e}")
+        return {}, historical_event_id

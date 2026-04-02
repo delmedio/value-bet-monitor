@@ -283,6 +283,11 @@ def send_scan_summary(
     _tg_send(text)
 
 
+def send_scan_error(error_msg: str) -> None:
+    text = f"⚠️ Scan falhou\n━━━━━━━━━━━━━━━━━━━━\n{error_msg}"
+    _tg_send(text)
+
+
 def _send_email(subject: str, html_body: str) -> None:
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         logger.warning("Gmail nao configurado")

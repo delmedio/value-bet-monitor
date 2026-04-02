@@ -29,6 +29,14 @@ def save_cache(cache: set) -> None:
     CACHE_FILE.write_text(json.dumps({"sent": list(cache)[-500:]}))
 
 
+def _market_bucket(market: str) -> str | None:
+    if market in ("ML", "DNB", "Spread"):
+        return "side"
+    if market == "Totals":
+        return "totals"
+    return None
+
+
 def run_normal():
     logger.info("=== Scan iniciado ===")
     now_utc    = datetime.now(timezone.utc)
@@ -46,12 +54,19 @@ def run_normal():
         value_bets = []
 
     sent_cache = load_cache()
+    existing_picks = load_picks()
     counts     = {"Elite": 0, "Strong": 0, "Value": 0}
     new_alerts = 0
 
     for vb in value_bets:
         pick_id = make_pick_id(vb.game, vb.market, vb.selection)
         if pick_id in sent_cache:
+            continue
+        bucket = _market_bucket(vb.market)
+        if bucket and any(
+            p.game == vb.game and _market_bucket(p.market) == bucket
+            for p in existing_picks
+        ):
             continue
 
         try:
@@ -76,6 +91,7 @@ def run_normal():
             sbo_open=vb.odds_sbo,
         )
         save_pick(pick)
+        existing_picks.append(pick)
         sent_cache.add(pick_id)
         new_alerts += 1
 

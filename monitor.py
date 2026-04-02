@@ -79,6 +79,9 @@ def run_normal():
             pick_id=pick_id,
             game=vb.game,
             league=vb.league,
+            league_slug=vb.league_slug,
+            home_team=vb.home_team,
+            away_team=vb.away_team,
             market=vb.market,
             selection=vb.selection,
             kickoff=vb.kickoff,
@@ -88,7 +91,7 @@ def run_normal():
             level=vb.level,
             bet_href=vb.bet_href,
             event_id=vb.event_id,
-            sbo_open=vb.odds_sbo,
+            singbet_open=vb.odds_singbet,
         )
         save_pick(pick)
         existing_picks.append(pick)
@@ -123,7 +126,7 @@ def run_test():
         return
     logger.info(f"TEST: {len(vbs)} value bets")
     for vb in vbs[:15]:
-        logger.info(f"  {vb.level} {vb.game} | {vb.market} {vb.selection} @ {vb.odds_b365} (SBO={vb.odds_sbo}) edge={vb.edge_pct}%")
+        logger.info(f"  {vb.level} {vb.game} | {vb.market} {vb.selection} @ {vb.odds_b365} (SingBet={vb.odds_singbet}) edge={vb.edge_pct}%")
 
 
 if __name__ == "__main__":

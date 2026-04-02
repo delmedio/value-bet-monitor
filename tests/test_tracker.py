@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tracker import make_pick_id, Pick, _find_singbet_closing
+from tracker import make_pick_id, Pick, _find_singbet_closing, timing_band
 
 
 # ── make_pick_id ─────────────────────────────────────────────────────────────
@@ -96,3 +96,53 @@ class TestFindSingbetClosing:
         pick = _make_pick(market="ML", selection="Porto")
         singbet = {"Totals": {"over": 1.90}}
         assert _find_singbet_closing(pick, singbet) is None
+
+
+# ── timing_band ─────────────────────────────────────────────────────────────
+
+class TestTimingBand:
+    def test_super_early_14d(self):
+        assert timing_band(400.0) == "14d+"
+
+    def test_14d_boundary(self):
+        assert timing_band(336.0) == "14d+"
+
+    def test_early_7_14d(self):
+        assert timing_band(200.0) == "7-14d"
+
+    def test_7d_boundary(self):
+        assert timing_band(168.0) == "7-14d"
+
+    def test_3_7d(self):
+        assert timing_band(96.0) == "3-7d"
+
+    def test_48_72h(self):
+        assert timing_band(50.0) == "48-72h"
+
+    def test_48h_boundary(self):
+        assert timing_band(48.0) == "48-72h"
+
+    def test_below_48h(self):
+        assert timing_band(30.0) == "<48h"
+
+    def test_none(self):
+        assert timing_band(None) == "unknown"
+
+
+# ── Pick timing fields ──────────────────────────────────────────────────────
+
+class TestPickTimingFields:
+    def test_pick_with_timing(self):
+        pick = _make_pick(
+            first_seen_at="2026-04-02T10:00:00Z",
+            alerted_at="2026-04-02T10:00:00Z",
+            hours_to_kickoff=202.0,
+        )
+        assert pick.hours_to_kickoff == 202.0
+        assert pick.alerted_at == "2026-04-02T10:00:00Z"
+
+    def test_pick_without_timing_defaults_none(self):
+        pick = _make_pick()
+        assert pick.hours_to_kickoff is None
+        assert pick.alerted_at is None
+        assert pick.first_seen_at is None

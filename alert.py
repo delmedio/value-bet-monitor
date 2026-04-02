@@ -239,7 +239,20 @@ def format_equivalent_lines(
     return "\n━━━━━━━━━━━━━━━━━━━━\nLinhas equivalentes:\n" + "\n".join(lines)
 
 
-def send_alert(vb) -> None:
+def _format_hours_to_kickoff(hours: float | None) -> str:
+    if hours is None:
+        return ""
+    days = hours / 24
+    if hours >= 336:    # 14d+
+        return f"\n🕐 {days:.0f}d antes do KO — Super Early"
+    if hours >= 168:    # 7-14d
+        return f"\n🕐 {days:.0f}d antes do KO — Early"
+    if hours >= 72:     # 3-7d
+        return f"\n🕐 {days:.0f}d antes do KO"
+    return f"\n🕐 {hours:.0f}h antes do KO"
+
+
+def send_alert(vb, hours_to_kickoff: float | None = None) -> None:
     eq = format_equivalent_lines(
         market=vb.market,
         selection=vb.selection,
@@ -248,6 +261,7 @@ def send_alert(vb) -> None:
         opp_odd=vb.opp_odd,
     )
     href_line = f'\n🔗 <a href="{vb.bet_href}">Apostar na Bet365</a>' if vb.bet_href else ""
+    timing_line = _format_hours_to_kickoff(hours_to_kickoff)
 
     text = (
         f"{vb.level}\n"
@@ -260,11 +274,12 @@ def send_alert(vb) -> None:
         f"💰 Bet365: {vb.odds_b365:.3f}\n"
         f"⚖️ Fair: ~{vb.fair_odd} | Mín: {vb.min_odd}\n"
         f"📈 Edge: +{vb.edge_pct}% CLV esperado"
+        f"{timing_line}"
         f"{href_line}"
         f"{eq}"
     )
     _tg_send(text)
-    logger.info("Alerta enviado: %s %s %s", vb.game, vb.market, vb.selection)
+    logger.info("Alerta enviado: %s %s %s (%.0fh antes KO)", vb.game, vb.market, vb.selection, hours_to_kickoff or 0)
 
 
 def send_scan_summary(
@@ -325,6 +340,27 @@ def _league_table_html(by_key: dict) -> str:
             f"<td style='text-align:center'>{beat_str}</td></tr>"
         )
     return "\n".join(rows)
+
+
+def _timing_table_html(by_timing: dict) -> str:
+    if not by_timing:
+        return "<tr><td colspan='3' style='text-align:center;color:#888'>Ainda sem dados de timing</td></tr>"
+
+    band_order = ["14d+", "7-14d", "3-7d", "48-72h", "<48h", "unknown"]
+    rows = []
+    for band in band_order:
+        stats = by_timing.get(band)
+        if not stats:
+            continue
+        clv_str = f"{stats['avg_clv']:+.1f}%"
+        beat_str = f"{stats['beat_line_pct']}%"
+        rows.append(
+            f"<tr><td>{band}</td>"
+            f"<td style='text-align:center'>{stats['tracked']}</td>"
+            f"<td style='text-align:center'>{clv_str}</td>"
+            f"<td style='text-align:center'>{beat_str}</td></tr>"
+        )
+    return "\n".join(rows) if rows else "<tr><td colspan='4' style='text-align:center;color:#888'>Ainda sem dados de timing</td></tr>"
 
 
 def _learning_rows(learning: dict) -> str:
@@ -484,6 +520,13 @@ def send_weekly_report() -> None:
     </table>
   </div>
   <div class="section">
+    <h2>🕐 CLV por antecedencia (timing)</h2>
+    <table>
+      <thead><tr><th>Antecedencia</th><th>Picks</th><th style="text-align:center">CLV medio</th><th style="text-align:center">Beat the line</th></tr></thead>
+      <tbody>{_timing_table_html(learning.get("by_timing", {}))}</tbody>
+    </table>
+  </div>
+  <div class="section">
     <h2>🎯 Detalhe por jogo — esta semana</h2>
     <table>
       <thead><tr><th>Jogo</th><th>Mercado</th><th style="text-align:center">Abertura</th><th style="text-align:center">Fecho SingBet</th><th style="text-align:center">CLV real</th></tr></thead>
@@ -529,6 +572,9 @@ def send_export() -> None:
                 "closing_odd_singbet": pick.closing_odd_singbet,
                 "clv_real": pick.clv_real,
                 "tracked_at": pick.tracked_at,
+                "first_seen_at": pick.first_seen_at,
+                "alerted_at": pick.alerted_at,
+                "hours_to_kickoff": pick.hours_to_kickoff,
             }
             for pick in picks
         ],

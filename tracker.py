@@ -1,8 +1,8 @@
 """
 tracker.py — Guarda picks e apura CLV real.
 
-CLV real = (odd abertura Bet365 / odd fecho Sbobet - 1) * 100
-Ex: entrámos a 2.30 na Bet365 e SBO fecha a 2.10 -> CLV = +9.5%
+CLV real = (odd abertura Bet365 / odd fecho SingBet - 1) * 100
+Ex: entrámos a 2.30 na Bet365 e SingBet fecha a 2.10 -> CLV = +9.5%
 """
 
 import hashlib
@@ -23,6 +23,9 @@ class Pick:
     pick_id: str
     game: str
     league: str
+    league_slug: str
+    home_team: str
+    away_team: str
     market: str
     selection: str
     kickoff: str
@@ -32,8 +35,9 @@ class Pick:
     level: str
     bet_href: str
     event_id: int
-    sbo_open: Optional[float] = None       # Sbobet abertura (se já disponível)
-    closing_odd_sbo: Optional[float] = None  # Sbobet fecho (apurado após jogo)
+    historical_event_id: Optional[int] = None
+    singbet_open: Optional[float] = None       # SingBet abertura (se já disponível)
+    closing_odd_singbet: Optional[float] = None  # SingBet fecho (apurado via histórico)
     clv_real: Optional[float] = None       # CLV real em %
     tracked_at: Optional[str] = None
 
@@ -41,15 +45,14 @@ class Pick:
 def make_pick_id(game: str, market: str, selection: str) -> str:
     """
     ID único por pick.
-    Totals: um pick por jogo (ignora Over/Under e linha).
-    Spread: um pick por equipa por jogo (ignora linha).
-    ML/DNB: usa game + market + selection completo.
+    Totals: um pick por jogo.
+    Side markets (ML/DNB/Spread): um pick por jogo.
+    Isto evita que o bot envie lados opostos do mesmo encontro em scans diferentes.
     """
     if market == "Totals":
         raw = f"{game}|Totals"
-    elif market == "Spread":
-        team = selection.rsplit(" ", 1)[0] if " " in selection else selection
-        raw = f"{game}|Spread|{team}"
+    elif market in ("ML", "DNB", "Spread"):
+        raw = f"{game}|SideMarkets"
     else:
         raw = f"{game}|{market}|{selection}"
     return hashlib.md5(raw.encode()).hexdigest()[:10]
@@ -68,11 +71,23 @@ def load_picks() -> list[Pick]:
             if not isinstance(p, dict):
                 continue
             filtered = {k: v for k, v in p.items() if k in known}
+            if "singbet_open" not in filtered and "sbo_open" in p:
+                filtered["singbet_open"] = p.get("sbo_open")
+            if "closing_odd_singbet" not in filtered and "closing_odd_sbo" in p:
+                filtered["closing_odd_singbet"] = p.get("closing_odd_sbo")
             if "pick_id" not in filtered or "game" not in filtered:
                 continue
+            game = filtered.get("game", "")
+            home_team, away_team = "", ""
+            if " vs " in game:
+                home_team, away_team = game.split(" vs ", 1)
+            filtered.setdefault("league_slug", "")
+            filtered.setdefault("home_team", home_team)
+            filtered.setdefault("away_team", away_team)
+            filtered.setdefault("historical_event_id", None)
             filtered.setdefault("fair_odd", 0.0)
             filtered.setdefault("edge_pct", 0.0)
-            filtered.setdefault("sbo_open", None)
+            filtered.setdefault("singbet_open", None)
             picks.append(Pick(**filtered))
         return picks
     except Exception as e:
@@ -95,9 +110,9 @@ def save_pick(pick: Pick) -> None:
 def track_pending_picks() -> None:
     """
     Apura CLV real para picks cujo kickoff já passou há 2h+.
-    CLV = (opening_odd / closing_sbo - 1) * 100
+    CLV = (opening_odd / closing_singbet - 1) * 100
     """
-    from scraper import fetch_sbo_closing_odds
+    from scraper import fetch_singbet_closing_odds
 
     picks = load_picks()
     changed = False
@@ -113,14 +128,22 @@ def track_pending_picks() -> None:
         if datetime.now(timezone.utc) < dt + timedelta(hours=2):
             continue
 
-        sbo = fetch_sbo_closing_odds(pick.event_id)
-        if not sbo:
+        singbet, historical_event_id = fetch_singbet_closing_odds(
+            event_id=pick.historical_event_id or pick.event_id,
+            league_slug=pick.league_slug,
+            kickoff=pick.kickoff,
+            home_team=pick.home_team,
+            away_team=pick.away_team,
+        )
+        if historical_event_id:
+            pick.historical_event_id = historical_event_id
+        if not singbet:
             continue
 
-        closing = _find_sbo_closing(pick, sbo)
+        closing = _find_singbet_closing(pick, singbet)
         if closing and closing > 1.0:
             clv = round((pick.opening_odd / closing - 1) * 100, 2)
-            pick.closing_odd_sbo = closing
+            pick.closing_odd_singbet = closing
             pick.clv_real = clv
             pick.tracked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
             changed = True
@@ -130,27 +153,27 @@ def track_pending_picks() -> None:
         save_picks(picks)
 
 
-def _find_sbo_closing(pick: Pick, sbo: dict) -> Optional[float]:
+def _find_singbet_closing(pick: Pick, singbet: dict) -> Optional[float]:
     def f(v):
         try:
             return float(v) if v else 0.0
         except Exception:
             return 0.0
 
-    home_team = pick.game.split(" vs ")[0]
+    home_team = pick.home_team or pick.game.split(" vs ")[0]
 
     if pick.market in ("ML", "DNB"):
-        ml = sbo.get("ML", {})
+        ml = singbet.get("ML", {})
         home_in = home_team.lower() in pick.selection.lower()
         return f(ml.get("home" if home_in else "away")) or None
 
     elif pick.market == "Spread":
-        sp = sbo.get("Spread", {})
+        sp = singbet.get("Spread", {})
         home_in = home_team.lower() in pick.selection.lower()
         return f(sp.get("home" if home_in else "away")) or None
 
     elif pick.market == "Totals":
-        tot = sbo.get("Totals", {})
+        tot = singbet.get("Totals", {})
         if "Over" in pick.selection:
             return f(tot.get("over") or tot.get("home")) or None
         return f(tot.get("under") or tot.get("away")) or None

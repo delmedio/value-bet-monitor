@@ -21,7 +21,7 @@ from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass
 from typing import Optional
 
-from model import is_value_bet, MIN_KICKOFF_DATE
+from model import is_value_bet, min_kickoff_date
 
 logger = logging.getLogger(__name__)
 
@@ -29,101 +29,56 @@ ODDS_API_KEY = os.environ.get("ODDS_API_IO_KEY", "")
 BASE_URL     = "https://api.odds-api.io/v3"
 STATE_FILE   = Path("odds_state.json")
 
-ALLOWED_LEAGUES = {
-    "Portugal - Liga Portugal",
-    "Portugal - Liga Portugal 2",
-    "Spain - LaLiga",
-    "Spain - LaLiga 2",
-    "England - Premier League",
-    "England - Championship",
-    "England - League One",
-    "England - League Two",
-    "Italy - Serie A",
-    "Italy - Serie B",
-    "Germany - Bundesliga",
-    "Germany - 2. Bundesliga",
-    "France - Ligue 1",
-    "France - Ligue 2",
-    "Netherlands - Eredivisie",
-    "Scotland - Premiership",
-    "Scotland - Championship",
-    "Belgium - Pro League",
-    "Greece - Super League",
-    "Norway - Eliteserien",
-    "Sweden - Allsvenskan",
-    "Denmark - Superliga",
-    "Finland - Veikkausliiga",
-    "Switzerland - Super League",
-    "Austria - Bundesliga",
-    "Turkiye - Super Lig",
-    "Poland - Ekstraklasa",
-    "Romania - Superliga",
-    "Russia - Premier League",
-    "Serbia - Superliga",
-    "International Clubs - UEFA Champions League",
-    "International Clubs - UEFA Europa League",
-    "International Clubs - UEFA Conference League",
-    "Brazil - Brasileiro Serie A",
-    "Brazil - Brasileiro Serie B",
-    "Argentina - Liga Profesional",
-    "International Clubs - Copa Libertadores",
-    "International Clubs - Copa Sudamericana",
-    "Mexico - Liga MX, Clausura",
-    "USA - MLS",
-    "International - World Cup",
-    "Japan - J.League",
-    "Republic of Korea - K-League 1",
-    "Australia - A-League",
-    "China - Chinese Super League",
-}
-
-LEAGUE_SLUGS = [
-    "portugal-liga-portugal",
-    "portugal-liga-portugal-2",
-    "spain-laliga",
-    "spain-laliga-2",
-    "england-premier-league",
-    "england-championship",
-    "england-league-one",
-    "england-league-two",
-    "italy-serie-a",
-    "italy-serie-b",
-    "germany-bundesliga",
-    "germany-2-bundesliga",
-    "france-ligue-1",
-    "france-ligue-2",
-    "netherlands-eredivisie",
-    "scotland-premiership",
-    "scotland-championship",
-    "belgium-pro-league",
-    "greece-super-league",
-    "norway-eliteserien",
-    "sweden-allsvenskan",
-    "denmark-superliga",
-    "finland-veikkausliiga",
-    "switzerland-super-league",
-    "austria-bundesliga",
-    "turkiye-super-lig",
-    "poland-ekstraklasa",
-    "romania-superliga",
-    "russia-premier-league",
-    "serbia-superliga",
-    "international-clubs-uefa-champions-league",
-    "international-clubs-uefa-europa-league",
-    "international-clubs-uefa-conference-league",
-    "brazil-brasileiro-serie-a",
-    "brazil-brasileiro-serie-b",
-    "argentina-liga-profesional",
-    "international-clubs-copa-libertadores",
-    "international-clubs-copa-sudamericana",
-    "mexico-liga-mx-clausura",
-    "usa-mls",
-    "international-world-cup",
-    "japan-jleague",
-    "republic-of-korea-k-league-1",
-    "australia-a-league",
-    "china-chinese-super-league",
+LEAGUES = [
+    ("Portugal - Liga Portugal", "portugal-liga-portugal"),
+    ("Portugal - Liga Portugal 2", "portugal-liga-portugal-2"),
+    ("Spain - LaLiga", "spain-laliga"),
+    ("Spain - LaLiga 2", "spain-laliga-2"),
+    ("England - Premier League", "england-premier-league"),
+    ("England - Championship", "england-championship"),
+    ("England - League One", "england-league-one"),
+    ("England - League Two", "england-league-two"),
+    ("Italy - Serie A", "italy-serie-a"),
+    ("Italy - Serie B", "italy-serie-b"),
+    ("Germany - Bundesliga", "germany-bundesliga"),
+    ("Germany - 2. Bundesliga", "germany-2-bundesliga"),
+    ("France - Ligue 1", "france-ligue-1"),
+    ("France - Ligue 2", "france-ligue-2"),
+    ("Netherlands - Eredivisie", "netherlands-eredivisie"),
+    ("Scotland - Premiership", "scotland-premiership"),
+    ("Scotland - Championship", "scotland-championship"),
+    ("Belgium - Pro League", "belgium-pro-league"),
+    ("Greece - Super League", "greece-super-league"),
+    ("Norway - Eliteserien", "norway-eliteserien"),
+    ("Sweden - Allsvenskan", "sweden-allsvenskan"),
+    ("Denmark - Superliga", "denmark-superliga"),
+    ("Finland - Veikkausliiga", "finland-veikkausliiga"),
+    ("Switzerland - Super League", "switzerland-super-league"),
+    ("Austria - Bundesliga", "austria-bundesliga"),
+    ("Turkiye - Super Lig", "turkiye-super-lig"),
+    ("Poland - Ekstraklasa", "poland-ekstraklasa"),
+    ("Romania - Superliga", "romania-superliga"),
+    ("Russia - Premier League", "russia-premier-league"),
+    ("Serbia - Superliga", "serbia-superliga"),
+    ("International Clubs - UEFA Champions League", "international-clubs-uefa-champions-league"),
+    ("International Clubs - UEFA Europa League", "international-clubs-uefa-europa-league"),
+    ("International Clubs - UEFA Conference League", "international-clubs-uefa-conference-league"),
+    ("Brazil - Brasileiro Serie A", "brazil-brasileiro-serie-a"),
+    ("Brazil - Brasileiro Serie B", "brazil-brasileiro-serie-b"),
+    ("Argentina - Liga Profesional", "argentina-liga-profesional"),
+    ("International Clubs - Copa Libertadores", "international-clubs-copa-libertadores"),
+    ("International Clubs - Copa Sudamericana", "international-clubs-copa-sudamericana"),
+    ("Mexico - Liga MX, Clausura", "mexico-liga-mx-clausura"),
+    ("USA - MLS", "usa-mls"),
+    ("International - World Cup", "international-world-cup"),
+    ("Japan - J.League", "japan-jleague"),
+    ("Republic of Korea - K-League 1", "republic-of-korea-k-league-1"),
+    ("Australia - A-League", "australia-a-league"),
+    ("China - Chinese Super League", "china-chinese-super-league"),
 ]
+
+ALLOWED_LEAGUES = {name for name, _ in LEAGUES}
+LEAGUE_SLUGS = [slug for _, slug in LEAGUES]
 
 
 @dataclass
@@ -346,7 +301,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     # Verifica data
     try:
         dt = datetime.strptime(kickoff, "%d/%m/%Y %H:%M")
-        min_dt = datetime.strptime(MIN_KICKOFF_DATE, "%Y-%m-%d")
+        min_dt = datetime.strptime(min_kickoff_date(), "%Y-%m-%d")
         if dt < min_dt:
             return None
     except Exception:
@@ -549,7 +504,7 @@ def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
 def fetch_value_bets() -> list[ValueBet]:
     """Detecta early value bets na Bet365 usando o modelo calibrado."""
     now = datetime.now(timezone.utc)
-    min_dt = datetime.strptime(MIN_KICKOFF_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    min_dt = datetime.strptime(min_kickoff_date(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
     max_dt = now + timedelta(days=35)
     state = _load_state()
 

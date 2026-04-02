@@ -141,9 +141,38 @@ def ev_level(edge_pct: float) -> str:
     return "📊 Value"
 
 
+def _timing_bonus(tracked: list[dict]) -> float:
+    """
+    Calcula bonus/penalidade com base no timing dos picks.
+    Super earlys (>7d) com bom CLV → relaxa threshold.
+    Picks 48-72h com CLV fraco → aperta.
+    Retorna ajuste entre -0.5 e +0.5.
+    """
+    super_early = [p for p in tracked
+                   if isinstance(p.get("hours_to_kickoff"), (int, float))
+                   and p["hours_to_kickoff"] >= 168]  # 7d+
+    standard = [p for p in tracked
+                if isinstance(p.get("hours_to_kickoff"), (int, float))
+                and 48 <= p["hours_to_kickoff"] < 72]  # 48-72h
+
+    if len(super_early) < 5 and len(standard) < 5:
+        return 0.0
+
+    se_clv = (sum(p["clv_real"] for p in super_early) / len(super_early)) if super_early else 0
+    std_clv = (sum(p["clv_real"] for p in standard) / len(standard)) if standard else 0
+
+    # Super earlys claramente melhores → relaxar para aceitar mais aberturas
+    if len(super_early) >= 5 and se_clv >= 5 and se_clv > std_clv + 2:
+        return -0.5
+    # Super earlys com CLV fraco → apertar
+    if len(super_early) >= 5 and se_clv < 0:
+        return 0.5
+    return 0.0
+
+
 def adaptive_min_edge(market: str = "ML", opening_odd: float | None = None) -> float:
     """
-    Ajuste pequeno por mercado com base no tracking real do proprio bot.
+    Ajuste por mercado + timing com base no tracking real do proprio bot.
     Parte de uma base mais conservadora calibrada nos dados historicos.
     """
     base_edge = base_min_edge(market, opening_odd)
@@ -174,6 +203,9 @@ def adaptive_min_edge(market: str = "ML", opening_odd: float | None = None) -> f
         adjustment += 0.5
     elif avg_clv >= 7 and beat_pct >= 60:
         adjustment -= 0.5
+
+    # Ajuste por timing (super earlys vs late picks)
+    adjustment += _timing_bonus(tracked)
 
     return round(min(max(base_edge + adjustment, 3.5), 9.0), 2)
 

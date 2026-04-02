@@ -366,7 +366,7 @@ def _timing_table_html(by_timing: dict) -> str:
 def _learning_rows(learning: dict) -> str:
     by_market = learning.get("by_market", {})
     if not by_market:
-        return "<tr><td colspan='6' style='text-align:center;color:#888'>Ainda sem picks tracked suficientes</td></tr>"
+        return "<tr><td colspan='8' style='text-align:center;color:#888'>Ainda sem picks tracked suficientes</td></tr>"
 
     labels = {
         "ML": "Match Odds",
@@ -376,6 +376,10 @@ def _learning_rows(learning: dict) -> str:
     }
     rows = []
     for market, stats in sorted(by_market.items(), key=lambda item: item[1]["tracked"], reverse=True):
+        dev = stats.get("avg_deviation")
+        mae = stats.get("mae")
+        dev_str = f"{dev:+.3f}" if dev is not None else "—"
+        mae_str = f"{mae:.3f}" if mae is not None else "—"
         rows.append(
             "<tr>"
             f"<td>{labels.get(market, market)}</td>"
@@ -383,6 +387,8 @@ def _learning_rows(learning: dict) -> str:
             f"<td style='text-align:center'>{stats['avg_clv']:+.1f}%</td>"
             f"<td style='text-align:center'>{stats['beat_line_pct']}%</td>"
             f"<td style='text-align:center'>{stats['avg_edge']:+.1f}%</td>"
+            f"<td style='text-align:center'>{dev_str}</td>"
+            f"<td style='text-align:center'>{mae_str}</td>"
             f"<td>{escape(stats['recommendation'])}</td>"
             "</tr>"
         )
@@ -435,7 +441,14 @@ def send_weekly_report() -> None:
     picks_rows = []
     for pick in sorted(week_picks, key=lambda item: item.kickoff):
         closing = f"{pick.closing_odd_singbet:.3f}" if pick.closing_odd_singbet else "Pendente"
+        fair_str = f"{pick.fair_odd:.3f}" if pick.fair_odd else "—"
         clv_str = f"{pick.clv_real:+.1f}%" if pick.clv_real is not None else "—"
+        # Desvio: fair - fecho real (positivo = modelo conservador, negativo = modelo agressivo)
+        if pick.fair_odd and pick.closing_odd_singbet:
+            deviation = round(pick.fair_odd - pick.closing_odd_singbet, 3)
+            dev_str = f"{deviation:+.3f}"
+        else:
+            dev_str = "—"
         label = {
             "ML": "Match Odds",
             "DNB": "DNB",
@@ -447,7 +460,9 @@ def send_weekly_report() -> None:
             f"<td>{escape(pick.game)}</td>"
             f"<td>{escape(label)} {escape(pick.selection)}</td>"
             f"<td style='text-align:center'>{pick.opening_odd:.3f}</td>"
+            f"<td style='text-align:center'>{fair_str}</td>"
             f"<td style='text-align:center'>{closing}</td>"
+            f"<td style='text-align:center'>{dev_str}</td>"
             f"<td style='text-align:center'>{clv_str}</td>"
             "</tr>"
         )
@@ -515,7 +530,7 @@ def send_weekly_report() -> None:
   <div class="section">
     <h2>🧠 Aprendizagem do modelo</h2>
     <table>
-      <thead><tr><th>Mercado</th><th>Tracked</th><th style="text-align:center">CLV medio</th><th style="text-align:center">Beat line</th><th style="text-align:center">Edge medio</th><th>Recomendacao</th></tr></thead>
+      <thead><tr><th>Mercado</th><th>Tracked</th><th style="text-align:center">CLV medio</th><th style="text-align:center">Beat line</th><th style="text-align:center">Edge medio</th><th style="text-align:center">Desvio Fair</th><th style="text-align:center">MAE</th><th>Recomendacao</th></tr></thead>
       <tbody>{_learning_rows(learning)}</tbody>
     </table>
   </div>
@@ -529,8 +544,8 @@ def send_weekly_report() -> None:
   <div class="section">
     <h2>🎯 Detalhe por jogo — esta semana</h2>
     <table>
-      <thead><tr><th>Jogo</th><th>Mercado</th><th style="text-align:center">Abertura</th><th style="text-align:center">Fecho SingBet</th><th style="text-align:center">CLV real</th></tr></thead>
-      <tbody>{''.join(picks_rows) or "<tr><td colspan='5' style='text-align:center;color:#888'>Sem dados esta semana</td></tr>"}</tbody>
+      <thead><tr><th>Jogo</th><th>Mercado</th><th style="text-align:center">Abertura</th><th style="text-align:center">Fair</th><th style="text-align:center">Fecho SingBet</th><th style="text-align:center">Desvio</th><th style="text-align:center">CLV real</th></tr></thead>
+      <tbody>{''.join(picks_rows) or "<tr><td colspan='7' style='text-align:center;color:#888'>Sem dados esta semana</td></tr>"}</tbody>
     </table>
   </div>
   <div class="section">

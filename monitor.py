@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from scraper import fetch_value_bets, ValueBet
 from tracker import make_pick_id, save_pick, load_picks, track_pending_picks, Pick
-from alert import send_alert, send_scan_summary, send_weekly_report, send_export
+from alert import send_alert, send_scan_summary, send_scan_error, send_weekly_report, send_export
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -51,6 +51,10 @@ def run_normal():
         value_bets = fetch_value_bets()
     except Exception as e:
         logger.error(f"fetch_value_bets: {e}")
+        try:
+            send_scan_error(f"fetch_value_bets: {e}")
+        except Exception:
+            logger.error("Falhou a enviar alerta de erro para Telegram")
         value_bets = []
 
     sent_cache = load_cache()

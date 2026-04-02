@@ -4,6 +4,7 @@ tracker.py — Guarda picks e apura CLV real.
 CLV real = (odd abertura Bet365 / odd fecho SingBet - 1) * 100
 Ex: entrámos a 2.30 na Bet365 e SingBet fecha a 2.10 -> CLV = +9.5%
 """
+from __future__ import annotations
 
 import hashlib
 import json
@@ -40,6 +41,10 @@ class Pick:
     closing_odd_singbet: Optional[float] = None  # SingBet fecho (apurado via histórico)
     clv_real: Optional[float] = None       # CLV real em %
     tracked_at: Optional[str] = None
+    # ── Timing fields (super early tracking) ──
+    first_seen_at: Optional[str] = None        # UTC ISO: quando o bot viu o evento pela 1a vez
+    alerted_at: Optional[str] = None           # UTC ISO: quando o alerta foi enviado
+    hours_to_kickoff: Optional[float] = None   # horas entre alerta e kickoff
 
 
 def make_pick_id(game: str, market: str, selection: str) -> str:
@@ -88,6 +93,9 @@ def load_picks() -> list[Pick]:
             filtered.setdefault("fair_odd", 0.0)
             filtered.setdefault("edge_pct", 0.0)
             filtered.setdefault("singbet_open", None)
+            filtered.setdefault("first_seen_at", None)
+            filtered.setdefault("alerted_at", None)
+            filtered.setdefault("hours_to_kickoff", None)
             picks.append(Pick(**filtered))
         return picks
     except Exception as e:
@@ -213,6 +221,23 @@ def get_picks_for_report(days: int = 7) -> dict:
     }
 
 
+MIN_HOURS_TO_KICKOFF = 48.0  # picks com menos de 48h são descartados
+
+def timing_band(hours: float | None) -> str:
+    """Classifica horas até ao kickoff em bandas de antecedência."""
+    if hours is None:
+        return "unknown"
+    if hours >= 336:   # 14+ dias
+        return "14d+"
+    if hours >= 168:   # 7-14 dias
+        return "7-14d"
+    if hours >= 72:    # 3-7 dias
+        return "3-7d"
+    if hours >= 48:    # 2-3 dias
+        return "48-72h"
+    return "<48h"      # não devia existir com o filtro ativo
+
+
 def get_learning_snapshot(min_samples: int = 5) -> dict:
     tracked = [pick for pick in load_picks() if pick.clv_real is not None]
     overall_count = len(tracked)
@@ -249,9 +274,31 @@ def get_learning_snapshot(min_samples: int = 5) -> dict:
             "recommendation": recommendation,
         }
 
+    # ── Análise por timing band ────────────────────────────────────────────
+    by_timing: dict[str, list[Pick]] = defaultdict(list)
+    for pick in tracked:
+        band = timing_band(pick.hours_to_kickoff)
+        by_timing[band].append(pick)
+
+    timing_stats = {}
+    band_order = ["14d+", "7-14d", "3-7d", "48-72h", "<48h", "unknown"]
+    for band in band_order:
+        picks_in_band = by_timing.get(band, [])
+        count = len(picks_in_band)
+        if count == 0:
+            continue
+        avg_clv = round(sum(p.clv_real for p in picks_in_band) / count, 2)
+        beat_pct = round(sum(1 for p in picks_in_band if p.clv_real > 0) / count * 100, 1)
+        timing_stats[band] = {
+            "tracked": count,
+            "avg_clv": avg_clv,
+            "beat_line_pct": beat_pct,
+        }
+
     return {
         "tracked_total": overall_count,
         "overall_avg_clv": overall_avg_clv,
         "overall_beat_line_pct": overall_beat_pct,
         "by_market": by_market,
+        "by_timing": timing_stats,
     }

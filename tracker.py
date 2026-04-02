@@ -255,6 +255,16 @@ def get_learning_snapshot(min_samples: int = 5) -> dict:
         beat_pct = round(sum(1 for pick in picks if pick.clv_real > 0) / count * 100, 1)
         avg_edge = round(sum(pick.edge_pct for pick in picks) / count, 2)
 
+        # Precisão do modelo: fair vs closing real
+        calibrated = [p for p in picks if p.fair_odd and p.closing_odd_singbet]
+        if calibrated:
+            deviations = [p.fair_odd - p.closing_odd_singbet for p in calibrated]
+            avg_deviation = round(sum(deviations) / len(deviations), 3)
+            mae = round(sum(abs(d) for d in deviations) / len(deviations), 3)
+        else:
+            avg_deviation = None
+            mae = None
+
         if count < min_samples:
             recommendation = "Amostra curta; manter observacao antes de mexer no threshold."
         elif avg_clv >= 5 and beat_pct >= 55:
@@ -271,6 +281,9 @@ def get_learning_snapshot(min_samples: int = 5) -> dict:
             "avg_clv": avg_clv,
             "beat_line_pct": beat_pct,
             "avg_edge": avg_edge,
+            "avg_deviation": avg_deviation,  # fair - closing (+ = conservador, - = agressivo)
+            "mae": mae,                      # erro medio absoluto
+            "calibrated_count": len(calibrated),
             "recommendation": recommendation,
         }
 

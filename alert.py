@@ -92,7 +92,7 @@ def _format_equiv_line(label: str, odd: float | None, market: str) -> str | None
 
     min_odd = _equiv_min_odd(odd, market)
     if min_odd is None:
-        return f"• {label} | Mín: n/d"
+        return None
 
     edge = round((odd / min_odd - 1) * 100, 2)
     return f"• {label} | Mín: {min_odd:.2f} | Edge: {edge:+.2f}%"
@@ -371,7 +371,7 @@ def send_weekly_report() -> None:
     if avg_clv is None:
         diag_icon, diag_msg = "⏳", "Ainda sem amostra suficiente esta semana. O tracker continua a aprender."
     elif avg_clv >= 5 and (beat_pct or 0) >= 55:
-        diag_icon, diag_msg = "🟢", "Semana forte: o modelo continua alinhado com o fecho da Sbobet."
+        diag_icon, diag_msg = "🟢", "Semana forte: o modelo continua alinhado com o fecho da SingBet."
     elif avg_clv >= 2 or (beat_pct or 0) >= 50:
         diag_icon, diag_msg = "🟡", "Semana aceitavel: ha value, mas vale continuar a monitorizar por mercado."
     elif avg_clv >= 0:
@@ -393,7 +393,7 @@ def send_weekly_report() -> None:
 
     picks_rows = []
     for pick in sorted(week_picks, key=lambda item: item.kickoff):
-        closing = f"{pick.closing_odd_sbo:.3f}" if pick.closing_odd_sbo else "Pendente"
+        closing = f"{pick.closing_odd_singbet:.3f}" if pick.closing_odd_singbet else "Pendente"
         clv_str = f"{pick.clv_real:+.1f}%" if pick.clv_real is not None else "—"
         label = {
             "ML": "Match Odds",
@@ -448,7 +448,7 @@ def send_weekly_report() -> None:
 <div class="container">
   <div class="header">
     <h1>📊 Value Bet Monitor — Report Semanal</h1>
-    <p>Semana ate {week_str} · Abertura: Bet365 · Fecho tracked: Sbobet via odds-api.io</p>
+    <p>Semana ate {week_str} · Abertura: Bet365 · Fecho tracked: SingBet via historical odds da odds-api.io</p>
   </div>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-value">{len(week_picks)}</div><div class="kpi-label">Picks</div></div>
@@ -481,7 +481,7 @@ def send_weekly_report() -> None:
   <div class="section">
     <h2>🎯 Detalhe por jogo — esta semana</h2>
     <table>
-      <thead><tr><th>Jogo</th><th>Mercado</th><th style="text-align:center">Abertura</th><th style="text-align:center">Fecho SBO</th><th style="text-align:center">CLV real</th></tr></thead>
+      <thead><tr><th>Jogo</th><th>Mercado</th><th style="text-align:center">Abertura</th><th style="text-align:center">Fecho SingBet</th><th style="text-align:center">CLV real</th></tr></thead>
       <tbody>{''.join(picks_rows) or "<tr><td colspan='5' style='text-align:center;color:#888'>Sem dados esta semana</td></tr>"}</tbody>
     </table>
   </div>
@@ -512,13 +512,16 @@ def send_export() -> None:
                 "pick_id": pick.pick_id,
                 "game": pick.game,
                 "league": pick.league,
+                "league_slug": pick.league_slug,
                 "market": pick.market,
                 "selection": pick.selection,
                 "kickoff": pick.kickoff,
                 "opening_odd": pick.opening_odd,
                 "fair_odd": pick.fair_odd,
                 "edge_pct": pick.edge_pct,
-                "closing_odd_sbo": pick.closing_odd_sbo,
+                "historical_event_id": pick.historical_event_id,
+                "singbet_open": pick.singbet_open,
+                "closing_odd_singbet": pick.closing_odd_singbet,
                 "clv_real": pick.clv_real,
                 "tracked_at": pick.tracked_at,
             }

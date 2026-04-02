@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from scraper import fetch_value_bets, ValueBet
-from tracker import make_pick_id, save_pick, load_picks, track_pending_picks, Pick
+from tracker import make_pick_id, save_pick, load_picks, track_pending_picks, Pick, MIN_HOURS_TO_KICKOFF
 from alert import send_alert, send_scan_summary, send_scan_error, send_weekly_report, send_export
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -73,8 +73,21 @@ def run_normal():
         ):
             continue
 
+        alerted_at = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        hours_to_ko = None
         try:
-            send_alert(vb)
+            ko_dt = datetime.strptime(vb.kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
+            hours_to_ko = round((ko_dt - now_utc).total_seconds() / 3600, 1)
+        except Exception:
+            pass
+
+        # Filtro hard: só picks com >= 48h de antecedência
+        if hours_to_ko is not None and hours_to_ko < MIN_HOURS_TO_KICKOFF:
+            logger.info(f"Skip {vb.game} — {hours_to_ko:.0f}h antes do KO (min {MIN_HOURS_TO_KICKOFF}h)")
+            continue
+
+        try:
+            send_alert(vb, hours_to_kickoff=hours_to_ko)
         except Exception as e:
             logger.error(f"send_alert: {e}")
             continue
@@ -96,6 +109,9 @@ def run_normal():
             bet_href=vb.bet_href,
             event_id=vb.event_id,
             singbet_open=vb.odds_singbet,
+            first_seen_at=alerted_at,
+            alerted_at=alerted_at,
+            hours_to_kickoff=hours_to_ko,
         )
         save_pick(pick)
         existing_picks.append(pick)

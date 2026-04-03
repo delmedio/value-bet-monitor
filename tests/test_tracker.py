@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tracker import (
-    make_pick_id, Pick, _find_singbet_closing, _derive_dnb_from_ml,
+    make_pick_id, Pick, _find_bookmaker_closing, _find_best_closing, _derive_dnb_from_ml,
     _parse_hdp_from_selection, _parse_line_from_selection, timing_band,
 )
 
@@ -41,7 +41,7 @@ class TestMakePickId:
         assert id_side != id_totals
 
 
-# ── _find_singbet_closing ────────────────────────────────────────────────────
+# ── _find_sbobet_closing ─────────────────────────────────────────────────────
 
 def _make_pick(**kwargs) -> Pick:
     defaults = dict(
@@ -65,113 +65,121 @@ def _make_pick(**kwargs) -> Pick:
     return Pick(**defaults)
 
 
-class TestFindSingbetClosing:
+class TestFindClosing:
     def test_ml_home(self):
         pick = _make_pick(market="ML", selection="Porto")
-        singbet = {"ML": {"home": 1.85, "away": 2.10}}
-        assert _find_singbet_closing(pick, singbet) == 1.85
+        bookmaker = {"ML": {"home": 1.85, "away": 2.10}}
+        assert _find_bookmaker_closing(pick, bookmaker) == 1.85
 
     def test_ml_away(self):
         pick = _make_pick(market="ML", selection="Benfica")
-        singbet = {"ML": {"home": 1.85, "away": 2.10}}
-        assert _find_singbet_closing(pick, singbet) == 2.10
+        bookmaker = {"ML": {"home": 1.85, "away": 2.10}}
+        assert _find_bookmaker_closing(pick, bookmaker) == 2.10
 
     def test_dnb_direct(self):
         """DNB usa Draw No Bet da API, não ML."""
         pick = _make_pick(market="DNB", selection="Porto")
-        singbet = {
+        bookmaker = {
             "ML": {"home": 2.50, "away": 3.00, "draw": 3.20},
             "Draw No Bet": {"home": 1.65, "away": 2.25},
         }
-        assert _find_singbet_closing(pick, singbet) == 1.65
+        assert _find_bookmaker_closing(pick, bookmaker) == 1.65
 
     def test_dnb_fallback_spread_ah0(self):
         """DNB fallback para Spread AH 0."""
         pick = _make_pick(market="DNB", selection="Porto")
-        singbet = {
+        bookmaker = {
             "ML": {"home": 2.50, "away": 3.00, "draw": 3.20},
             "Spread": {"home": 1.67, "away": 2.41, "hdp": 0},
         }
-        assert _find_singbet_closing(pick, singbet) == 1.67
+        assert _find_bookmaker_closing(pick, bookmaker) == 1.67
 
     def test_dnb_without_dnb_or_ah0_returns_none(self):
         """Sem DNB/AH0 real da API, o fecho fica pendente."""
         pick = _make_pick(market="DNB", selection="Porto")
-        singbet = {"ML": {"home": 2.00, "away": 4.00, "draw": 3.50}}
-        assert _find_singbet_closing(pick, singbet) is None
+        bookmaker = {"ML": {"home": 2.00, "away": 4.00, "draw": 3.50}}
+        assert _find_bookmaker_closing(pick, bookmaker) is None
 
     def test_dnb_not_ml(self):
         """Verifica que DNB NÃO usa a odd ML directa."""
         pick = _make_pick(market="DNB", selection="Porto")
-        singbet = {"ML": {"home": 2.50, "away": 3.00, "draw": 3.20}}
-        assert _find_singbet_closing(pick, singbet) is None
+        bookmaker = {"ML": {"home": 2.50, "away": 3.00, "draw": 3.20}}
+        assert _find_bookmaker_closing(pick, bookmaker) is None
 
     def test_totals_over(self):
         pick = _make_pick(market="Totals", selection="Over 2.5")
-        singbet = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
-        assert _find_singbet_closing(pick, singbet) == 1.90
+        bookmaker = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
+        assert _find_bookmaker_closing(pick, bookmaker) == 1.90
 
     def test_totals_under(self):
         pick = _make_pick(market="Totals", selection="Under 2.5")
-        singbet = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
-        assert _find_singbet_closing(pick, singbet) == 2.00
+        bookmaker = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
+        assert _find_bookmaker_closing(pick, bookmaker) == 2.00
 
     def test_spread_home_hdp_match(self):
         """Spread devolve odd quando hdp corresponde."""
         pick = _make_pick(market="Spread", selection="Porto -0.50")
-        singbet = {"Spread": {"home": 1.95, "away": 1.95, "hdp": -0.5}}
-        assert _find_singbet_closing(pick, singbet) == 1.95
+        bookmaker = {"Spread": {"home": 1.95, "away": 1.95, "hdp": -0.5}}
+        assert _find_bookmaker_closing(pick, bookmaker) == 1.95
 
     def test_spread_hdp_mismatch(self):
         """Spread rejeita quando hdp não corresponde."""
         pick = _make_pick(market="Spread", selection="Porto -0.25")
-        singbet = {"Spread": {"home": 1.95, "away": 1.95, "hdp": -0.5}}
-        assert _find_singbet_closing(pick, singbet) is None
+        bookmaker = {"Spread": {"home": 1.95, "away": 1.95, "hdp": -0.5}}
+        assert _find_bookmaker_closing(pick, bookmaker) is None
 
     def test_spread_all_lines_match(self):
         """Spread encontra linha correcta em múltiplas linhas."""
         pick = _make_pick(market="Spread", selection="Porto -0.25")
-        singbet = {
+        bookmaker = {
             "Spread": {"home": 1.95, "away": 1.95, "hdp": -0.5},
             "Spread_all": [
                 {"home": 1.95, "away": 1.95, "hdp": -0.5},
                 {"home": 1.87, "away": 2.03, "hdp": -0.25},
             ],
         }
-        assert _find_singbet_closing(pick, singbet) == 1.87
+        assert _find_bookmaker_closing(pick, bookmaker) == 1.87
 
     def test_totals_line_match(self):
         """Totals devolve odd quando line corresponde."""
         pick = _make_pick(market="Totals", selection="Over 2.5")
-        singbet = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
-        assert _find_singbet_closing(pick, singbet) == 1.90
+        bookmaker = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
+        assert _find_bookmaker_closing(pick, bookmaker) == 1.90
 
     def test_totals_line_mismatch(self):
         """Totals rejeita quando line não corresponde."""
         pick = _make_pick(market="Totals", selection="Over 2.75")
-        singbet = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
-        assert _find_singbet_closing(pick, singbet) is None
+        bookmaker = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
+        assert _find_bookmaker_closing(pick, bookmaker) is None
 
     def test_totals_all_lines_match(self):
         """Totals encontra linha correcta em múltiplas linhas."""
         pick = _make_pick(market="Totals", selection="Over 2.75")
-        singbet = {
+        bookmaker = {
             "Totals": {"over": 1.90, "under": 2.00, "max": 2.5},
             "Totals_all": [
                 {"over": 1.90, "under": 2.00, "max": 2.5},
                 {"over": 2.05, "under": 1.85, "max": 2.75},
             ],
         }
-        assert _find_singbet_closing(pick, singbet) == 2.05
+        assert _find_bookmaker_closing(pick, bookmaker) == 2.05
 
-    def test_empty_singbet(self):
+    def test_empty_bookmaker(self):
         pick = _make_pick(market="ML", selection="Porto")
-        assert _find_singbet_closing(pick, {}) is None
+        assert _find_bookmaker_closing(pick, {}) is None
 
     def test_missing_market(self):
         pick = _make_pick(market="ML", selection="Porto")
-        singbet = {"Totals": {"over": 1.90}}
-        assert _find_singbet_closing(pick, singbet) is None
+        bookmaker = {"Totals": {"over": 1.90}}
+        assert _find_bookmaker_closing(pick, bookmaker) is None
+
+    def test_best_closing_prefers_higher_odd(self):
+        pick = _make_pick(market="DNB", selection="Porto")
+        feeds = {
+            "Sbobet": {"Spread": {"home": 1.64, "away": 2.38, "hdp": 0}},
+            "Stake": {"Spread": {"home": 1.67, "away": 2.17, "hdp": 0}},
+        }
+        assert _find_best_closing(pick, feeds) == ("Stake", 1.67)
 
 
 class TestParseSelections:
@@ -266,4 +274,3 @@ class TestPickTimingFields:
         assert pick.hours_to_kickoff is None
         assert pick.alerted_at is None
         assert pick.first_seen_at is None
-

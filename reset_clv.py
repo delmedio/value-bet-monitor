@@ -4,7 +4,7 @@ reset_clv.py — Limpa CLV e fecho de todos os picks para re-tracking.
 Mantém intactos: game, market, selection, opening_odd, fair_odd, edge_pct,
 level, kickoff, event_id, league, etc.
 
-Limpa: closing_odd_singbet, clv_real, tracked_at.
+Limpa: closing_odd_reference, closing_bookmaker, closing_odd_sbobet, closing_odd_singbet, clv_real, tracked_at.
 
 Depois de correr este script, o próximo scan normal com track_pending_picks()
 vai recalcular os CLVs com a lógica corrigida.
@@ -43,11 +43,17 @@ def reset():
             game = pick.get("game", "?")
             market = pick.get("market", "?")
             selection = pick.get("selection", "?")
-            old_closing = pick.get("closing_odd_singbet", "?")
+            old_closing = pick.get(
+                "closing_odd_reference",
+                pick.get("closing_odd_sbobet", pick.get("closing_odd_singbet", "?"))
+            )
             old_clv = pick.get("clv_real", "?")
             print(f"  RESET: {game} | {market} {selection} | fecho={old_closing} clv={old_clv}")
 
             if not dry_run:
+                pick["closing_odd_reference"] = None
+                pick["closing_bookmaker"] = None
+                pick["closing_odd_sbobet"] = None
                 pick["closing_odd_singbet"] = None
                 pick["clv_real"] = None
                 pick["tracked_at"] = None

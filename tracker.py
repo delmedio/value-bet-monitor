@@ -464,10 +464,65 @@ def get_learning_snapshot(min_samples: int = 5) -> dict:
             "beat_line_pct": beat_pct,
         }
 
+    # ── Análise por liga ──────────────────────────────────────────────────
+    by_league_picks: dict[str, list[Pick]] = defaultdict(list)
+    for pick in tracked:
+        by_league_picks[pick.league].append(pick)
+
+    league_stats = {}
+    for league, picks in sorted(by_league_picks.items(), key=lambda x: len(x[1]), reverse=True):
+        count = len(picks)
+        avg_clv = round(sum(p.clv_real for p in picks) / count, 2)
+        beat_pct = round(sum(1 for p in picks if p.clv_real > 0) / count * 100, 1)
+        league_stats[league] = {
+            "tracked": count,
+            "avg_clv": avg_clv,
+            "beat_line_pct": beat_pct,
+        }
+
+    # ── Análise por hora UTC de detecção ─────────────────────────────────
+    HOUR_BANDS = {
+        "night":     (0, 6, "00-06 UTC"),
+        "morning":   (6, 12, "06-12 UTC"),
+        "afternoon": (12, 18, "12-18 UTC"),
+        "evening":   (18, 24, "18-00 UTC"),
+    }
+    by_hour_picks: dict[str, list[Pick]] = defaultdict(list)
+    for pick in tracked:
+        if not pick.alerted_at:
+            continue
+        try:
+            dt = datetime.fromisoformat(pick.alerted_at.replace("Z", "+00:00"))
+            hour = dt.hour
+            for band_key, (lo, hi, _) in HOUR_BANDS.items():
+                if lo <= hour < hi:
+                    by_hour_picks[band_key].append(pick)
+                    break
+        except Exception:
+            continue
+
+    hour_stats = {}
+    for band_key in ["night", "morning", "afternoon", "evening"]:
+        picks_in_band = by_hour_picks.get(band_key, [])
+        count = len(picks_in_band)
+        if count == 0:
+            continue
+        avg_clv = round(sum(p.clv_real for p in picks_in_band) / count, 2)
+        beat_pct = round(sum(1 for p in picks_in_band if p.clv_real > 0) / count * 100, 1)
+        _, _, label = HOUR_BANDS[band_key]
+        hour_stats[label] = {
+            "tracked": count,
+            "avg_clv": avg_clv,
+            "beat_line_pct": beat_pct,
+        }
+
     return {
         "tracked_total": overall_count,
         "overall_avg_clv": overall_avg_clv,
         "overall_beat_line_pct": overall_beat_pct,
         "by_market": by_market,
         "by_timing": timing_stats,
+        "by_league": league_stats,
+        "by_hour": hour_stats,
     }
+

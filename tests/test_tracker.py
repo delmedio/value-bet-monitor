@@ -76,6 +76,12 @@ class TestFindClosing:
         bookmaker = {"ML": {"home": 1.85, "away": 2.10}}
         assert _find_bookmaker_closing(pick, bookmaker) == 2.10
 
+    def test_ml_string_odds(self):
+        """Sbobet/Stake devolvem odds como strings."""
+        pick = _make_pick(market="ML", selection="Porto")
+        bookmaker = {"ML": {"home": "2.510", "draw": "2.790", "away": "3.080"}}
+        assert _find_bookmaker_closing(pick, bookmaker) == 2.51
+
     def test_dnb_direct(self):
         """DNB usa Draw No Bet da API, não ML."""
         pick = _make_pick(market="DNB", selection="Porto")
@@ -85,6 +91,15 @@ class TestFindClosing:
         }
         assert _find_bookmaker_closing(pick, bookmaker) == 1.65
 
+    def test_dnb_stake_format(self):
+        """Stake tem Draw No Bet como mercado directo com strings."""
+        pick = _make_pick(market="DNB", selection="Porto")
+        bookmaker = {
+            "ML": {"home": "2.440", "draw": "2.800", "away": "3.200"},
+            "Draw No Bet": {"home": "1.670", "away": "2.170"},
+        }
+        assert abs(_find_bookmaker_closing(pick, bookmaker) - 1.67) < 0.01
+
     def test_dnb_fallback_spread_ah0(self):
         """DNB fallback para Spread AH 0."""
         pick = _make_pick(market="DNB", selection="Porto")
@@ -93,6 +108,35 @@ class TestFindClosing:
             "Spread": {"home": 1.67, "away": 2.41, "hdp": 0},
         }
         assert _find_bookmaker_closing(pick, bookmaker) == 1.67
+
+    def test_dnb_sbobet_ah0_in_spread_all(self):
+        """Sbobet sem DNB mas com AH 0 no Spread_all — primeira linha pode não ser hdp 0."""
+        pick = _make_pick(market="DNB", selection="Porto")
+        bookmaker = {
+            "ML": {"home": "2.510", "draw": "2.790", "away": "3.080"},
+            "Spread": {"hdp": 0, "home": "1.670", "away": "2.330"},
+            "Spread_all": [
+                {"hdp": 0, "home": "1.670", "away": "2.330"},
+                {"hdp": -0.5, "home": "2.510", "away": "1.580"},
+                {"hdp": -0.25, "home": "2.040", "away": "1.880"},
+            ],
+        }
+        assert abs(_find_bookmaker_closing(pick, bookmaker) - 1.67) < 0.01
+
+    def test_dnb_sbobet_ah0_not_first_line(self):
+        """Sbobet com AH 0 não como primeira linha do Spread."""
+        pick = _make_pick(market="DNB", selection="Porto")
+        bookmaker = {
+            "ML": {"home": "2.510", "draw": "2.790", "away": "3.080"},
+            "Spread": {"hdp": -0.5, "home": "2.510", "away": "1.580"},
+            "Spread_all": [
+                {"hdp": -0.5, "home": "2.510", "away": "1.580"},
+                {"hdp": 0, "home": "1.670", "away": "2.330"},
+                {"hdp": -0.25, "home": "2.040", "away": "1.880"},
+            ],
+        }
+        # Sem DNB directo e Spread principal é -0.5, mas _all tem hdp 0
+        assert abs(_find_bookmaker_closing(pick, bookmaker) - 1.67) < 0.01
 
     def test_dnb_without_dnb_or_ah0_returns_none(self):
         """Sem DNB/AH0 real da API, o fecho fica pendente."""
@@ -115,6 +159,39 @@ class TestFindClosing:
         pick = _make_pick(market="Totals", selection="Under 2.5")
         bookmaker = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
         assert _find_bookmaker_closing(pick, bookmaker) == 2.00
+
+    def test_totals_sbobet_hdp_key(self):
+        """Sbobet/Stake usam 'hdp' em vez de 'max' nos Totals."""
+        pick = _make_pick(market="Totals", selection="Over 2.0")
+        bookmaker = {"Totals": {"hdp": 2, "over": "2.140", "under": "1.770"}}
+        assert abs(_find_bookmaker_closing(pick, bookmaker) - 2.14) < 0.01
+
+    def test_totals_sbobet_hdp_all_lines(self):
+        """Sbobet Totals com múltiplas linhas e chave hdp."""
+        pick = _make_pick(market="Totals", selection="Over 1.75")
+        bookmaker = {
+            "Totals": {"hdp": 1.75, "over": "1.820", "under": "2.080"},
+            "Totals_all": [
+                {"hdp": 1.75, "over": "1.820", "under": "2.080"},
+                {"hdp": 2, "over": "2.140", "under": "1.770"},
+                {"hdp": 1.5, "over": "1.640", "under": "2.350"},
+            ],
+        }
+        assert abs(_find_bookmaker_closing(pick, bookmaker) - 1.82) < 0.01
+
+    def test_totals_stake_find_specific_line(self):
+        """Stake Totals — encontra linha 2.25 nas múltiplas linhas."""
+        pick = _make_pick(market="Totals", selection="Under 2.25")
+        bookmaker = {
+            "Totals": {"hdp": 1.75, "over": "1.770", "under": "2.020"},
+            "Totals_all": [
+                {"hdp": 1.75, "over": "1.770", "under": "2.020"},
+                {"hdp": 2, "over": "2.100", "under": "1.710"},
+                {"hdp": 2.25, "over": "2.470", "under": "1.530"},
+                {"hdp": 2.5, "over": "2.850", "under": "1.420"},
+            ],
+        }
+        assert abs(_find_bookmaker_closing(pick, bookmaker) - 1.53) < 0.01
 
     def test_spread_home_hdp_match(self):
         """Spread devolve odd quando hdp corresponde."""
@@ -139,6 +216,34 @@ class TestFindClosing:
             ],
         }
         assert _find_bookmaker_closing(pick, bookmaker) == 1.87
+
+    def test_spread_sbobet_string_odds(self):
+        """Sbobet Spread com odds como strings e múltiplas linhas."""
+        pick = _make_pick(market="Spread", selection="Porto -0.25")
+        bookmaker = {
+            "Spread": {"hdp": 0, "home": "1.670", "away": "2.330"},
+            "Spread_all": [
+                {"hdp": 0, "home": "1.670", "away": "2.330"},
+                {"hdp": -0.5, "home": "2.510", "away": "1.580"},
+                {"hdp": -0.25, "home": "2.040", "away": "1.880"},
+            ],
+        }
+        assert abs(_find_bookmaker_closing(pick, bookmaker) - 2.04) < 0.01
+
+    def test_spread_stake_quarter_line(self):
+        """Stake Spread com quarter lines e strings."""
+        pick = _make_pick(market="Spread", selection="Porto -0.75")
+        bookmaker = {
+            "Spread": {"hdp": -0.75, "home": "3.000", "away": "1.380"},
+            "Spread_all": [
+                {"hdp": -0.75, "home": "3.000", "away": "1.380"},
+                {"hdp": 0, "home": "1.670", "away": "2.170"},
+                {"hdp": -0.25, "home": "2.050", "away": "1.740"},
+                {"hdp": 0.25, "home": "1.460", "away": "2.650"},
+                {"hdp": -0.5, "home": "2.440", "away": "1.540"},
+            ],
+        }
+        assert abs(_find_bookmaker_closing(pick, bookmaker) - 3.0) < 0.01
 
     def test_totals_line_match(self):
         """Totals devolve odd quando line corresponde."""
@@ -180,6 +285,48 @@ class TestFindClosing:
             "Stake": {"Spread": {"home": 1.67, "away": 2.17, "hdp": 0}},
         }
         assert _find_best_closing(pick, feeds) == ("Stake", 1.67)
+
+    def test_best_closing_sbobet_ah0_vs_stake_dnb(self):
+        """Sbobet tem Spread hdp 0, Stake tem Draw No Bet — ambos válidos para DNB."""
+        pick = _make_pick(market="DNB", selection="Porto")
+        feeds = {
+            "Sbobet": {
+                "ML": {"home": "2.510", "draw": "2.790", "away": "3.080"},
+                "Spread": {"hdp": 0, "home": "1.670", "away": "2.330"},
+            },
+            "Stake": {
+                "ML": {"home": "2.440", "draw": "2.800", "away": "3.200"},
+                "Draw No Bet": {"home": "1.670", "away": "2.170"},
+            },
+        }
+        result = _find_best_closing(pick, feeds)
+        assert result is not None
+        bookmaker, odd = result
+        assert abs(odd - 1.67) < 0.01
+
+    def test_best_closing_totals_across_bookmakers(self):
+        """Melhor odd de Totals entre Sbobet e Stake."""
+        pick = _make_pick(market="Totals", selection="Over 2.0")
+        feeds = {
+            "Sbobet": {
+                "Totals": {"hdp": 2, "over": "2.140", "under": "1.770"},
+                "Totals_all": [
+                    {"hdp": 1.75, "over": "1.820", "under": "2.080"},
+                    {"hdp": 2, "over": "2.140", "under": "1.770"},
+                ],
+            },
+            "Stake": {
+                "Totals": {"hdp": 1.75, "over": "1.770", "under": "2.020"},
+                "Totals_all": [
+                    {"hdp": 1.75, "over": "1.770", "under": "2.020"},
+                    {"hdp": 2, "over": "2.100", "under": "1.710"},
+                ],
+            },
+        }
+        bookmaker, odd = _find_best_closing(pick, feeds)
+        # Sbobet over 2.0 = 2.140, Stake over 2.0 = 2.100 → Sbobet ganha
+        assert bookmaker == "Sbobet"
+        assert abs(odd - 2.14) < 0.01
 
 
 class TestParseSelections:

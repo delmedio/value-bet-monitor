@@ -6898,5 +6898,30 @@
     "first_seen_at": "2026-04-03T13:00:35Z",
     "alerted_at": "2026-04-03T13:00:35Z",
     "hours_to_kickoff": 75.0
+  },
+  {
+    "pick_id": "03336ffb49",
+    "game": "Bologna FC vs Aston Villa",
+    "league": "International Clubs - UEFA Europa League",
+    "league_slug": "international-clubs-uefa-europa-league",
+    "home_team": "Bologna FC",
+    "away_team": "Aston Villa",
+    "market": "DNB",
+    "selection": "Bologna FC",
+    "kickoff": "09/04/2026 19:00",
+    "opening_odd": 2.2,
+    "fair_odd": 1.987,
+    "edge_pct": 10.72,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 69340210,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-03T15:00:35Z",
+    "alerted_at": "2026-04-03T15:00:35Z",
+    "hours_to_kickoff": 148.0
   }
 ]

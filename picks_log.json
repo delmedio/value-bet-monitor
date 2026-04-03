@@ -3942,12 +3942,15 @@
     "event_id": 61491253,
     "historical_event_id": 61491253,
     "singbet_open": null,
-    "closing_odd_singbet": 2.124,
-    "clv_real": -1.13,
-    "tracked_at": "2026-04-03 18:52",
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
     "first_seen_at": null,
     "alerted_at": null,
-    "hours_to_kickoff": null
+    "hours_to_kickoff": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "closing_odd_sbobet": null
   },
   {
     "pick_id": "0d0ef30843",
@@ -3967,12 +3970,15 @@
     "event_id": 61491255,
     "historical_event_id": 61491255,
     "singbet_open": null,
-    "closing_odd_singbet": 1.8,
-    "clv_real": 1.83,
-    "tracked_at": "2026-04-03 18:52",
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
     "first_seen_at": null,
     "alerted_at": null,
-    "hours_to_kickoff": null
+    "hours_to_kickoff": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "closing_odd_sbobet": null
   },
   {
     "pick_id": "3a2223283a",
@@ -4042,12 +4048,15 @@
     "event_id": 61494929,
     "historical_event_id": 61494929,
     "singbet_open": null,
-    "closing_odd_singbet": 2.22,
-    "clv_real": -18.92,
-    "tracked_at": "2026-04-03 18:52",
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
     "first_seen_at": null,
     "alerted_at": null,
-    "hours_to_kickoff": null
+    "hours_to_kickoff": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "closing_odd_sbobet": null
   },
   {
     "pick_id": "26667cc801",
@@ -4067,12 +4076,15 @@
     "event_id": 61494935,
     "historical_event_id": 61494935,
     "singbet_open": null,
-    "closing_odd_singbet": 2.02,
-    "clv_real": -0.99,
-    "tracked_at": "2026-04-03 18:52",
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
     "first_seen_at": null,
     "alerted_at": null,
-    "hours_to_kickoff": null
+    "hours_to_kickoff": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "closing_odd_sbobet": null
   },
   {
     "pick_id": "f644571be8",
@@ -5617,12 +5629,15 @@
     "event_id": 61232009,
     "historical_event_id": 61232009,
     "singbet_open": null,
-    "closing_odd_singbet": 1.96,
-    "clv_real": -6.48,
-    "tracked_at": "2026-04-03 18:52",
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
     "first_seen_at": null,
     "alerted_at": null,
-    "hours_to_kickoff": null
+    "hours_to_kickoff": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "closing_odd_sbobet": null
   },
   {
     "pick_id": "66734de76a",
@@ -5692,12 +5707,15 @@
     "event_id": 61232013,
     "historical_event_id": 61232013,
     "singbet_open": null,
-    "closing_odd_singbet": 2.124,
-    "clv_real": -4.66,
-    "tracked_at": "2026-04-03 18:52",
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
     "first_seen_at": null,
     "alerted_at": null,
-    "hours_to_kickoff": null
+    "hours_to_kickoff": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "closing_odd_sbobet": null
   },
   {
     "pick_id": "c490868c76",
@@ -6692,12 +6710,15 @@
     "event_id": 63684701,
     "historical_event_id": 63684701,
     "singbet_open": null,
-    "closing_odd_singbet": 1.93,
-    "clv_real": 8.81,
-    "tracked_at": "2026-04-03 18:52",
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
     "first_seen_at": null,
     "alerted_at": null,
-    "hours_to_kickoff": null
+    "hours_to_kickoff": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "closing_odd_sbobet": null
   },
   {
     "pick_id": "1cc5234688",

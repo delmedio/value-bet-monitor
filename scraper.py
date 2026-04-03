@@ -366,7 +366,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
             # Só early bets — SingBet ainda não abriu
             if singbet_odd is not None:
                 continue
-            result = is_value_bet(odd, market=MKT_TYPE.get(mkt, "ML"))
+            result = is_value_bet(odd, market=MKT_TYPE.get(mkt, "ML"), league=league)
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
                 best_vb = ValueBet(
@@ -400,7 +400,7 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
             singbet_odd = _float(singbet_ou.get(singbet_key) or 0) or None
             if singbet_odd is not None:
                 continue
-            result = is_value_bet(odd, market="OU")
+            result = is_value_bet(odd, market="OU", league=league)
             if result and result["edge_pct"] > best_edge:
                 best_edge = result["edge_pct"]
                 best_vb = ValueBet(

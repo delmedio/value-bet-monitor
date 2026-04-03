@@ -8,6 +8,7 @@ import os
 import smtplib
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import escape
@@ -306,15 +307,25 @@ def send_scan_error(error_msg: str) -> None:
     _tg_send(text)
 
 
-def _send_email(subject: str, html_body: str) -> None:
+def _send_email(
+    subject: str,
+    html_body: str,
+    attachments: list[tuple[str, bytes, str]] | None = None,
+) -> None:
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         logger.warning("Gmail nao configurado")
         return
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = GMAIL_USER
     msg["To"] = GMAIL_USER
     msg.attach(MIMEText(html_body, "html"))
+
+    for filename, content, subtype in attachments or []:
+        part = MIMEApplication(content, _subtype=subtype)
+        part.add_header("Content-Disposition", "attachment", filename=filename)
+        msg.attach(part)
+
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_USER, GMAIL_USER, msg.as_string())
@@ -570,8 +581,9 @@ def send_export() -> None:
     from tracker import get_learning_snapshot, load_picks
 
     picks = load_picks()
+    generated_at = datetime.now(timezone.utc)
     data = {
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "generated_at": generated_at.strftime("%Y-%m-%d %H:%M UTC"),
         "learning": get_learning_snapshot(),
         "picks": [
             {
@@ -597,8 +609,14 @@ def send_export() -> None:
             for pick in picks
         ],
     }
-    payload = escape(json.dumps(data, indent=2, ensure_ascii=False))
+    payload = json.dumps(data, indent=2, ensure_ascii=False)
+    filename = f"value_bet_export_{generated_at.strftime('%Y%m%d_%H%MUTC')}.json"
     _send_email(
         subject="📦 Value Bet Monitor — Export picks_log",
-        html_body=f"<pre style='font-family:monospace;font-size:12px'>{payload}</pre>",
+        html_body=(
+            f"<p>Segue em anexo o export JSON do Value Bet Monitor.</p>"
+            f"<p>Ficheiro: <b>{escape(filename)}</b><br>"
+            f"Picks: <b>{len(picks)}</b></p>"
+        ),
+        attachments=[(filename, payload.encode("utf-8"), "json")],
     )

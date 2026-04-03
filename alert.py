@@ -377,6 +377,33 @@ def _timing_table_html(by_timing: dict) -> str:
     return "\n".join(rows) if rows else "<tr><td colspan='4' style='text-align:center;color:#888'>Ainda sem dados de timing</td></tr>"
 
 
+def _hour_table_html(by_hour: dict) -> str:
+    if not by_hour:
+        return "<tr><td colspan='4' style='text-align:center;color:#888'>Ainda sem dados de hora</td></tr>"
+
+    band_order = ["00-06 UTC", "06-12 UTC", "12-18 UTC", "18-00 UTC"]
+    labels = {
+        "00-06 UTC": "🌙 00-06 UTC (madrugada)",
+        "06-12 UTC": "🌅 06-12 UTC (manhã)",
+        "12-18 UTC": "☀️ 12-18 UTC (tarde)",
+        "18-00 UTC": "🌆 18-00 UTC (noite)",
+    }
+    rows = []
+    for band in band_order:
+        stats = by_hour.get(band)
+        if not stats:
+            continue
+        clv_str = f"{stats['avg_clv']:+.1f}%"
+        beat_str = f"{stats['beat_line_pct']}%"
+        rows.append(
+            f"<tr><td>{labels.get(band, band)}</td>"
+            f"<td style='text-align:center'>{stats['tracked']}</td>"
+            f"<td style='text-align:center'>{clv_str}</td>"
+            f"<td style='text-align:center'>{beat_str}</td></tr>"
+        )
+    return "\n".join(rows) if rows else "<tr><td colspan='4' style='text-align:center;color:#888'>Ainda sem dados de hora</td></tr>"
+
+
 def _learning_rows(learning: dict) -> str:
     by_market = learning.get("by_market", {})
     if not by_market:
@@ -560,6 +587,13 @@ def send_weekly_report() -> None:
     </table>
   </div>
   <div class="section">
+    <h2>⏰ CLV por hora de detecção</h2>
+    <table>
+      <thead><tr><th>Janela UTC</th><th>Picks</th><th style="text-align:center">CLV medio</th><th style="text-align:center">Beat the line</th></tr></thead>
+      <tbody>{_hour_table_html(learning.get("by_hour", {}))}</tbody>
+    </table>
+  </div>
+  <div class="section">
     <h2>🎯 Detalhe por jogo — esta semana</h2>
     <table>
       <thead><tr><th>Jogo</th><th>Mercado</th><th style="text-align:center">Abertura</th><th style="text-align:center">Fair</th><th style="text-align:center">Fecho Ref</th><th style="text-align:center">Desvio</th><th style="text-align:center">CLV real</th></tr></thead>
@@ -625,3 +659,4 @@ def send_export() -> None:
         ),
         attachments=[(filename, payload.encode("utf-8"), "json")],
     )
+

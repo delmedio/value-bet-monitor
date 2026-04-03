@@ -161,6 +161,71 @@ def track_pending_picks() -> None:
         save_picks(picks)
 
 
+def _derive_dnb_from_ml(ml: dict, side: str) -> Optional[float]:
+    """Deriva DNB a partir de odds ML (1X2) usando probabilidades implícitas."""
+    def f(v):
+        try:
+            return float(v) if v else 0.0
+        except Exception:
+            return 0.0
+
+    home_odd = f(ml.get("home"))
+    away_odd = f(ml.get("away"))
+    draw_odd = f(ml.get("draw"))
+    if not (home_odd > 1 and away_odd > 1 and draw_odd > 1):
+        return None
+
+    p_home = 1 / home_odd
+    p_away = 1 / away_odd
+    total_sides = p_home + p_away
+    if total_sides <= 0:
+        return None
+
+    if side == "home":
+        p_dnb = p_home / total_sides
+    else:
+        p_dnb = p_away / total_sides
+
+    if p_dnb <= 0 or p_dnb >= 1:
+        return None
+    return round(1 / p_dnb, 3)
+
+
+def _parse_hdp_from_selection(selection: str) -> Optional[float]:
+    """Extrai handicap da selection. Ex: 'Porto -0.50' → -0.50"""
+    try:
+        parts = selection.rsplit(" ", 1)
+        if len(parts) == 2:
+            return float(parts[1])
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
+def _parse_line_from_selection(selection: str) -> Optional[float]:
+    """Extrai line da selection. Ex: 'Over 2.5' → 2.5"""
+    try:
+        parts = selection.split(maxsplit=1)
+        if len(parts) == 2:
+            return float(parts[1])
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
+def _find_line_in_all(all_lines: list, key: str, target: float) -> Optional[dict]:
+    """Procura na lista de linhas aquela cujo campo key == target."""
+    def f(v):
+        try:
+            return float(v) if v else 0.0
+        except Exception:
+            return 0.0
+    for entry in all_lines:
+        if abs(f(entry.get(key, 0)) - target) < 0.01:
+            return entry
+    return None
+
+
 def _find_singbet_closing(pick: Pick, singbet: dict) -> Optional[float]:
     def f(v):
         try:
@@ -169,20 +234,79 @@ def _find_singbet_closing(pick: Pick, singbet: dict) -> Optional[float]:
             return 0.0
 
     home_team = pick.home_team or pick.game.split(" vs ")[0]
+    home_in = home_team.lower() in pick.selection.lower()
+    side = "home" if home_in else "away"
 
-    if pick.market in ("ML", "DNB"):
+    if pick.market == "ML":
         ml = singbet.get("ML", {})
-        home_in = home_team.lower() in pick.selection.lower()
-        return f(ml.get("home" if home_in else "away")) or None
+        return f(ml.get(side)) or None
+
+    elif pick.market == "DNB":
+        # 1. Tentar DNB directo da SingBet
+        dnb = singbet.get("Draw No Bet", {})
+        val = f(dnb.get(side))
+        if val and val > 1:
+            return val
+
+        # 2. Tentar Spread/AH 0 (equivalente a DNB)
+        # Primeiro nas linhas todas, depois na primeira
+        sp_all = singbet.get("Spread_all", [])
+        match = _find_line_in_all(sp_all, "hdp", 0.0) if sp_all else None
+        if match:
+            val = f(match.get(side))
+            if val and val > 1:
+                return val
+        sp = singbet.get("Spread", {})
+        hdp = f(sp.get("hdp") or sp.get("handicap") or 0)
+        if hdp == 0:
+            val = f(sp.get(side))
+            if val and val > 1:
+                return val
+
+        # 3. Se a API nao devolver DNB/AH0, nao inventamos um fecho sintetico.
+        logger.warning(f"DNB closing not found in SingBet for {pick.game} ({pick.selection})")
+        return None
 
     elif pick.market == "Spread":
+        target_hdp = _parse_hdp_from_selection(pick.selection)
+
+        # Tentar match exacto pelo handicap nas linhas todas
+        sp_all = singbet.get("Spread_all", [])
+        if sp_all and target_hdp is not None:
+            match = _find_line_in_all(sp_all, "hdp", target_hdp)
+            if match:
+                return f(match.get(side)) or None
+
+        # Fallback: primeira linha, mas só se o hdp corresponde
         sp = singbet.get("Spread", {})
-        home_in = home_team.lower() in pick.selection.lower()
-        return f(sp.get("home" if home_in else "away")) or None
+        sp_hdp = f(sp.get("hdp") or sp.get("handicap") or 0)
+        if target_hdp is not None and abs(sp_hdp - target_hdp) > 0.01:
+            logger.warning(f"Spread hdp mismatch: pick={target_hdp}, SingBet={sp_hdp} ({pick.game})")
+            return None
+        return f(sp.get(side)) or None
 
     elif pick.market == "Totals":
+        target_line = _parse_line_from_selection(pick.selection)
+        direction = "over" if "Over" in pick.selection else "under"
+
+        # Tentar match exacto pela line nas linhas todas
+        tot_all = singbet.get("Totals_all", [])
+        if tot_all and target_line is not None:
+            match = _find_line_in_all(tot_all, "max", target_line)
+            if not match:
+                match = _find_line_in_all(tot_all, "hdp", target_line)
+            if match:
+                val = f(match.get(direction) or match.get("home" if direction == "over" else "away"))
+                if val and val > 1:
+                    return val
+
+        # Fallback: primeira linha, mas só se a line corresponde
         tot = singbet.get("Totals", {})
-        if "Over" in pick.selection:
+        tot_line = f(tot.get("max") or tot.get("hdp") or 0)
+        if target_line is not None and abs(tot_line - target_line) > 0.01:
+            logger.warning(f"Totals line mismatch: pick={target_line}, SingBet={tot_line} ({pick.game})")
+            return None
+        if direction == "over":
             return f(tot.get("over") or tot.get("home")) or None
         return f(tot.get("under") or tot.get("away")) or None
 

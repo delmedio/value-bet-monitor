@@ -1,8 +1,8 @@
 """
 tracker.py — Guarda picks e apura CLV real.
 
-CLV real = (odd abertura Bet365 / odd fecho SingBet - 1) * 100
-Ex: entrámos a 2.30 na Bet365 e SingBet fecha a 2.10 -> CLV = +9.5%
+CLV real = (odd abertura Bet365 / odd fecho de referencia - 1) * 100
+Ex: entrámos a 2.30 na Bet365 e a melhor odd entre Sbobet/Stake fecha a 2.10 -> CLV = +9.5%
 """
 from __future__ import annotations
 
@@ -37,8 +37,9 @@ class Pick:
     bet_href: str
     event_id: int
     historical_event_id: Optional[int] = None
-    singbet_open: Optional[float] = None       # SingBet abertura (se já disponível)
-    closing_odd_singbet: Optional[float] = None  # SingBet fecho (apurado via histórico)
+    singbet_open: Optional[float] = None       # SingBet abertura (continua util no scan live)
+    closing_odd_reference: Optional[float] = None  # melhor fecho entre Sbobet e Stake
+    closing_bookmaker: Optional[str] = None    # casa da odd de fecho usada no CLV
     clv_real: Optional[float] = None       # CLV real em %
     tracked_at: Optional[str] = None
     # ── Timing fields (super early tracking) ──
@@ -78,8 +79,18 @@ def load_picks() -> list[Pick]:
             filtered = {k: v for k, v in p.items() if k in known}
             if "singbet_open" not in filtered and "sbo_open" in p:
                 filtered["singbet_open"] = p.get("sbo_open")
-            if "closing_odd_singbet" not in filtered and "closing_odd_sbo" in p:
-                filtered["closing_odd_singbet"] = p.get("closing_odd_sbo")
+            if "closing_odd_reference" not in filtered:
+                if "closing_odd_reference" in p:
+                    filtered["closing_odd_reference"] = p.get("closing_odd_reference")
+                elif "closing_odd_sbobet" in p:
+                    filtered["closing_odd_reference"] = p.get("closing_odd_sbobet")
+                    filtered.setdefault("closing_bookmaker", "Sbobet")
+                elif "closing_odd_singbet" in p:
+                    filtered["closing_odd_reference"] = p.get("closing_odd_singbet")
+                    filtered.setdefault("closing_bookmaker", "SingBet")
+                elif "closing_odd_sbo" in p:
+                    filtered["closing_odd_reference"] = p.get("closing_odd_sbo")
+                    filtered.setdefault("closing_bookmaker", "Sbobet")
             if "pick_id" not in filtered or "game" not in filtered:
                 continue
             game = filtered.get("game", "")
@@ -118,9 +129,9 @@ def save_pick(pick: Pick) -> None:
 def track_pending_picks() -> None:
     """
     Apura CLV real para picks cujo kickoff já passou há 2h+.
-    CLV = (opening_odd / closing_singbet - 1) * 100
+    CLV = (opening_odd / closing_reference - 1) * 100
     """
-    from scraper import fetch_singbet_closing_odds
+    from scraper import fetch_reference_closing_odds
 
     picks = load_picks()
     changed = False
@@ -136,7 +147,7 @@ def track_pending_picks() -> None:
         if datetime.now(timezone.utc) < dt + timedelta(hours=2):
             continue
 
-        singbet, historical_event_id = fetch_singbet_closing_odds(
+        closing_feeds, historical_event_id = fetch_reference_closing_odds(
             event_id=pick.historical_event_id or pick.event_id,
             league_slug=pick.league_slug,
             kickoff=pick.kickoff,
@@ -145,17 +156,19 @@ def track_pending_picks() -> None:
         )
         if historical_event_id:
             pick.historical_event_id = historical_event_id
-        if not singbet:
+        if not closing_feeds:
             continue
 
-        closing = _find_singbet_closing(pick, singbet)
-        if closing and closing > 1.0:
+        best = _find_best_closing(pick, closing_feeds)
+        if best:
+            bookmaker, closing = best
             clv = round((pick.opening_odd / closing - 1) * 100, 2)
-            pick.closing_odd_singbet = closing
+            pick.closing_odd_reference = closing
+            pick.closing_bookmaker = bookmaker
             pick.clv_real = clv
             pick.tracked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
             changed = True
-            logger.info(f"CLV tracked: {pick.game} {pick.selection} → {clv:+.1f}%")
+            logger.info(f"CLV tracked: {pick.game} {pick.selection} → {clv:+.1f}% ({bookmaker} {closing:.3f})")
 
     if changed:
         save_picks(picks)
@@ -226,7 +239,7 @@ def _find_line_in_all(all_lines: list, key: str, target: float) -> Optional[dict
     return None
 
 
-def _find_singbet_closing(pick: Pick, singbet: dict) -> Optional[float]:
+def _find_bookmaker_closing(pick: Pick, bookmaker_odds: dict, bookmaker_name: str = "bookmaker") -> Optional[float]:
     def f(v):
         try:
             return float(v) if v else 0.0
@@ -238,25 +251,25 @@ def _find_singbet_closing(pick: Pick, singbet: dict) -> Optional[float]:
     side = "home" if home_in else "away"
 
     if pick.market == "ML":
-        ml = singbet.get("ML", {})
+        ml = bookmaker_odds.get("ML", {})
         return f(ml.get(side)) or None
 
     elif pick.market == "DNB":
-        # 1. Tentar DNB directo da SingBet
-        dnb = singbet.get("Draw No Bet", {})
+        # 1. Tentar DNB directo da casa
+        dnb = bookmaker_odds.get("Draw No Bet", {})
         val = f(dnb.get(side))
         if val and val > 1:
             return val
 
         # 2. Tentar Spread/AH 0 (equivalente a DNB)
         # Primeiro nas linhas todas, depois na primeira
-        sp_all = singbet.get("Spread_all", [])
+        sp_all = bookmaker_odds.get("Spread_all", [])
         match = _find_line_in_all(sp_all, "hdp", 0.0) if sp_all else None
         if match:
             val = f(match.get(side))
             if val and val > 1:
                 return val
-        sp = singbet.get("Spread", {})
+        sp = bookmaker_odds.get("Spread", {})
         hdp = f(sp.get("hdp") or sp.get("handicap") or 0)
         if hdp == 0:
             val = f(sp.get(side))
@@ -264,24 +277,24 @@ def _find_singbet_closing(pick: Pick, singbet: dict) -> Optional[float]:
                 return val
 
         # 3. Se a API nao devolver DNB/AH0, nao inventamos um fecho sintetico.
-        logger.warning(f"DNB closing not found in SingBet for {pick.game} ({pick.selection})")
+        logger.warning(f"DNB closing not found in {bookmaker_name} for {pick.game} ({pick.selection})")
         return None
 
     elif pick.market == "Spread":
         target_hdp = _parse_hdp_from_selection(pick.selection)
 
         # Tentar match exacto pelo handicap nas linhas todas
-        sp_all = singbet.get("Spread_all", [])
+        sp_all = bookmaker_odds.get("Spread_all", [])
         if sp_all and target_hdp is not None:
             match = _find_line_in_all(sp_all, "hdp", target_hdp)
             if match:
                 return f(match.get(side)) or None
 
         # Fallback: primeira linha, mas só se o hdp corresponde
-        sp = singbet.get("Spread", {})
+        sp = bookmaker_odds.get("Spread", {})
         sp_hdp = f(sp.get("hdp") or sp.get("handicap") or 0)
         if target_hdp is not None and abs(sp_hdp - target_hdp) > 0.01:
-            logger.warning(f"Spread hdp mismatch: pick={target_hdp}, SingBet={sp_hdp} ({pick.game})")
+            logger.warning(f"Spread hdp mismatch: pick={target_hdp}, {bookmaker_name}={sp_hdp} ({pick.game})")
             return None
         return f(sp.get(side)) or None
 
@@ -290,7 +303,7 @@ def _find_singbet_closing(pick: Pick, singbet: dict) -> Optional[float]:
         direction = "over" if "Over" in pick.selection else "under"
 
         # Tentar match exacto pela line nas linhas todas
-        tot_all = singbet.get("Totals_all", [])
+        tot_all = bookmaker_odds.get("Totals_all", [])
         if tot_all and target_line is not None:
             match = _find_line_in_all(tot_all, "max", target_line)
             if not match:
@@ -301,16 +314,29 @@ def _find_singbet_closing(pick: Pick, singbet: dict) -> Optional[float]:
                     return val
 
         # Fallback: primeira linha, mas só se a line corresponde
-        tot = singbet.get("Totals", {})
+        tot = bookmaker_odds.get("Totals", {})
         tot_line = f(tot.get("max") or tot.get("hdp") or 0)
         if target_line is not None and abs(tot_line - target_line) > 0.01:
-            logger.warning(f"Totals line mismatch: pick={target_line}, SingBet={tot_line} ({pick.game})")
+            logger.warning(f"Totals line mismatch: pick={target_line}, {bookmaker_name}={tot_line} ({pick.game})")
             return None
         if direction == "over":
             return f(tot.get("over") or tot.get("home")) or None
         return f(tot.get("under") or tot.get("away")) or None
 
     return None
+
+
+def _find_best_closing(pick: Pick, bookmaker_feeds: dict[str, dict]) -> Optional[tuple[str, float]]:
+    candidates: list[tuple[str, float]] = []
+    for bookmaker_name, bookmaker_odds in bookmaker_feeds.items():
+        closing = _find_bookmaker_closing(pick, bookmaker_odds, bookmaker_name)
+        if closing and closing > 1.0:
+            candidates.append((bookmaker_name, closing))
+
+    if not candidates:
+        return None
+
+    return max(candidates, key=lambda item: item[1])
 
 
 def get_picks_for_report(days: int = 7) -> dict:
@@ -380,9 +406,9 @@ def get_learning_snapshot(min_samples: int = 5) -> dict:
         avg_edge = round(sum(pick.edge_pct for pick in picks) / count, 2)
 
         # Precisão do modelo: fair vs closing real
-        calibrated = [p for p in picks if p.fair_odd and p.closing_odd_singbet]
+        calibrated = [p for p in picks if p.fair_odd and p.closing_odd_reference]
         if calibrated:
-            deviations = [p.fair_odd - p.closing_odd_singbet for p in calibrated]
+            deviations = [p.fair_odd - p.closing_odd_reference for p in calibrated]
             avg_deviation = round(sum(deviations) / len(deviations), 3)
             mae = round(sum(abs(d) for d in deviations) / len(deviations), 3)
         else:

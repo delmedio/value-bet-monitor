@@ -6,7 +6,7 @@ Fluxo:
   2. Incremental scan: /v3/odds/updated -> apenas eventos alterados
   3. /v3/odds/multi -> odds Bet365 + SingBet em batch
   4. Modelo analisa Bet365 -> detecta early value (SingBet ainda fechada)
-  5. SingBet fica reservada para tracking de CLV
+  5. Sbobet + Stake ficam reservadas para tracking do melhor CLV
 """
 
 import json
@@ -257,6 +257,10 @@ def fetch_historical_event_id(
 
 
 def _extract_bookmaker_odds(data: dict, bookmaker_name: str) -> dict:
+    """
+    Extrai odds por mercado. Para Spread e Totals guarda todas as linhas
+    (pode haver múltiplos handicaps/lines), acessíveis via _all.
+    """
     bookmakers = data.get("bookmakers", {}) if isinstance(data, dict) else {}
     bookmaker_rows = bookmakers.get(bookmaker_name, [])
     result = {}
@@ -265,6 +269,9 @@ def _extract_bookmaker_odds(data: dict, bookmaker_name: str) -> dict:
         odds_list = mkt.get("odds", [])
         if odds_list:
             result[name] = odds_list[0]
+            # Guardar todas as linhas para match preciso por handicap/line
+            if name in ("Spread", "Totals", "Draw No Bet") and len(odds_list) > 1:
+                result[f"{name}_all"] = odds_list
     return result
 
 
@@ -567,12 +574,15 @@ def fetch_value_bets() -> list[ValueBet]:
     return value_bets
 
 
-def _fetch_historical_singbet_odds(event_id: int) -> dict:
-    data = _get("/historical/odds", {"eventId": event_id, "bookmakers": "SingBet"})
-    return _extract_bookmaker_odds(data, "SingBet")
+REFERENCE_BOOKMAKERS = ("Sbobet", "Stake")
 
 
-def fetch_singbet_closing_odds(
+def _fetch_historical_bookmaker_odds(event_id: int, bookmaker_name: str) -> dict:
+    data = _get("/historical/odds", {"eventId": event_id, "bookmakers": bookmaker_name})
+    return _extract_bookmaker_odds(data, bookmaker_name)
+
+
+def fetch_reference_closing_odds(
     event_id: int,
     league_slug: str = "",
     kickoff: str = "",
@@ -580,16 +590,20 @@ def fetch_singbet_closing_odds(
     away_team: str = "",
 ) -> tuple[dict, int | None]:
     """
-    Busca odds históricas de fecho da SingBet para apurar CLV real.
+    Busca odds históricas de fecho da Sbobet e Stake para apurar CLV real.
     Primeiro tenta o event_id já guardado; se falhar, resolve o id histórico
     através de /historical/events.
     """
-    try:
-        direct = _fetch_historical_singbet_odds(event_id)
-        if direct:
-            return direct, event_id
-    except Exception as e:
-        logger.warning(f"fetch_singbet_closing_odds direct {event_id}: {e}")
+    direct: dict[str, dict] = {}
+    for bookmaker_name in REFERENCE_BOOKMAKERS:
+        try:
+            odds = _fetch_historical_bookmaker_odds(event_id, bookmaker_name)
+            if odds:
+                direct[bookmaker_name] = odds
+        except Exception as e:
+            logger.warning(f"fetch_reference_closing_odds direct {event_id} {bookmaker_name}: {e}")
+    if direct:
+        return direct, event_id
 
     historical_event_id = fetch_historical_event_id(
         league_slug=league_slug,
@@ -600,9 +614,12 @@ def fetch_singbet_closing_odds(
     if not historical_event_id:
         return {}, None
 
-    try:
-        historical = _fetch_historical_singbet_odds(historical_event_id)
-        return historical, historical_event_id
-    except Exception as e:
-        logger.warning(f"fetch_singbet_closing_odds historical {historical_event_id}: {e}")
-        return {}, historical_event_id
+    historical: dict[str, dict] = {}
+    for bookmaker_name in REFERENCE_BOOKMAKERS:
+        try:
+            odds = _fetch_historical_bookmaker_odds(historical_event_id, bookmaker_name)
+            if odds:
+                historical[bookmaker_name] = odds
+        except Exception as e:
+            logger.warning(f"fetch_reference_closing_odds historical {historical_event_id} {bookmaker_name}: {e}")
+    return historical, historical_event_id

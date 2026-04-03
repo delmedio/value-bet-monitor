@@ -3,7 +3,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tracker import make_pick_id, Pick, _find_singbet_closing, timing_band
+from tracker import (
+    make_pick_id, Pick, _find_singbet_closing, _derive_dnb_from_ml,
+    _parse_hdp_from_selection, _parse_line_from_selection, timing_band,
+)
 
 
 # ── make_pick_id ─────────────────────────────────────────────────────────────
@@ -73,20 +76,93 @@ class TestFindSingbetClosing:
         singbet = {"ML": {"home": 1.85, "away": 2.10}}
         assert _find_singbet_closing(pick, singbet) == 2.10
 
+    def test_dnb_direct(self):
+        """DNB usa Draw No Bet da API, não ML."""
+        pick = _make_pick(market="DNB", selection="Porto")
+        singbet = {
+            "ML": {"home": 2.50, "away": 3.00, "draw": 3.20},
+            "Draw No Bet": {"home": 1.65, "away": 2.25},
+        }
+        assert _find_singbet_closing(pick, singbet) == 1.65
+
+    def test_dnb_fallback_spread_ah0(self):
+        """DNB fallback para Spread AH 0."""
+        pick = _make_pick(market="DNB", selection="Porto")
+        singbet = {
+            "ML": {"home": 2.50, "away": 3.00, "draw": 3.20},
+            "Spread": {"home": 1.67, "away": 2.41, "hdp": 0},
+        }
+        assert _find_singbet_closing(pick, singbet) == 1.67
+
+    def test_dnb_without_dnb_or_ah0_returns_none(self):
+        """Sem DNB/AH0 real da API, o fecho fica pendente."""
+        pick = _make_pick(market="DNB", selection="Porto")
+        singbet = {"ML": {"home": 2.00, "away": 4.00, "draw": 3.50}}
+        assert _find_singbet_closing(pick, singbet) is None
+
+    def test_dnb_not_ml(self):
+        """Verifica que DNB NÃO usa a odd ML directa."""
+        pick = _make_pick(market="DNB", selection="Porto")
+        singbet = {"ML": {"home": 2.50, "away": 3.00, "draw": 3.20}}
+        assert _find_singbet_closing(pick, singbet) is None
+
     def test_totals_over(self):
         pick = _make_pick(market="Totals", selection="Over 2.5")
-        singbet = {"Totals": {"over": 1.90, "under": 2.00}}
+        singbet = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
         assert _find_singbet_closing(pick, singbet) == 1.90
 
     def test_totals_under(self):
         pick = _make_pick(market="Totals", selection="Under 2.5")
-        singbet = {"Totals": {"over": 1.90, "under": 2.00}}
+        singbet = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
         assert _find_singbet_closing(pick, singbet) == 2.00
 
-    def test_spread_home(self):
+    def test_spread_home_hdp_match(self):
+        """Spread devolve odd quando hdp corresponde."""
         pick = _make_pick(market="Spread", selection="Porto -0.50")
-        singbet = {"Spread": {"home": 1.95, "away": 1.95}}
+        singbet = {"Spread": {"home": 1.95, "away": 1.95, "hdp": -0.5}}
         assert _find_singbet_closing(pick, singbet) == 1.95
+
+    def test_spread_hdp_mismatch(self):
+        """Spread rejeita quando hdp não corresponde."""
+        pick = _make_pick(market="Spread", selection="Porto -0.25")
+        singbet = {"Spread": {"home": 1.95, "away": 1.95, "hdp": -0.5}}
+        assert _find_singbet_closing(pick, singbet) is None
+
+    def test_spread_all_lines_match(self):
+        """Spread encontra linha correcta em múltiplas linhas."""
+        pick = _make_pick(market="Spread", selection="Porto -0.25")
+        singbet = {
+            "Spread": {"home": 1.95, "away": 1.95, "hdp": -0.5},
+            "Spread_all": [
+                {"home": 1.95, "away": 1.95, "hdp": -0.5},
+                {"home": 1.87, "away": 2.03, "hdp": -0.25},
+            ],
+        }
+        assert _find_singbet_closing(pick, singbet) == 1.87
+
+    def test_totals_line_match(self):
+        """Totals devolve odd quando line corresponde."""
+        pick = _make_pick(market="Totals", selection="Over 2.5")
+        singbet = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
+        assert _find_singbet_closing(pick, singbet) == 1.90
+
+    def test_totals_line_mismatch(self):
+        """Totals rejeita quando line não corresponde."""
+        pick = _make_pick(market="Totals", selection="Over 2.75")
+        singbet = {"Totals": {"over": 1.90, "under": 2.00, "max": 2.5}}
+        assert _find_singbet_closing(pick, singbet) is None
+
+    def test_totals_all_lines_match(self):
+        """Totals encontra linha correcta em múltiplas linhas."""
+        pick = _make_pick(market="Totals", selection="Over 2.75")
+        singbet = {
+            "Totals": {"over": 1.90, "under": 2.00, "max": 2.5},
+            "Totals_all": [
+                {"over": 1.90, "under": 2.00, "max": 2.5},
+                {"over": 2.05, "under": 1.85, "max": 2.75},
+            ],
+        }
+        assert _find_singbet_closing(pick, singbet) == 2.05
 
     def test_empty_singbet(self):
         pick = _make_pick(market="ML", selection="Porto")
@@ -96,6 +172,50 @@ class TestFindSingbetClosing:
         pick = _make_pick(market="ML", selection="Porto")
         singbet = {"Totals": {"over": 1.90}}
         assert _find_singbet_closing(pick, singbet) is None
+
+
+class TestParseSelections:
+    def test_hdp_negative(self):
+        assert _parse_hdp_from_selection("Porto -0.50") == -0.50
+
+    def test_hdp_positive(self):
+        assert _parse_hdp_from_selection("Porto +0.25") == 0.25
+
+    def test_hdp_no_number(self):
+        assert _parse_hdp_from_selection("Porto") is None
+
+    def test_line_over(self):
+        assert _parse_line_from_selection("Over 2.5") == 2.5
+
+    def test_line_under(self):
+        assert _parse_line_from_selection("Under 2.75") == 2.75
+
+    def test_line_no_number(self):
+        assert _parse_line_from_selection("Over") is None
+
+
+class TestDeriveDnbFromMl:
+    def test_basic(self):
+        ml = {"home": 2.00, "away": 4.00, "draw": 3.50}
+        result = _derive_dnb_from_ml(ml, "home")
+        # p_home=0.5, p_away=0.25, p_dnb=0.5/0.75=0.667 → odd=1.5
+        assert result is not None
+        assert abs(result - 1.5) < 0.01
+
+    def test_away(self):
+        ml = {"home": 2.00, "away": 4.00, "draw": 3.50}
+        result = _derive_dnb_from_ml(ml, "away")
+        # p_away=0.25, p_dnb_away=0.25/0.75=0.333 → odd=3.0
+        assert result is not None
+        assert abs(result - 3.0) < 0.01
+
+    def test_missing_draw(self):
+        ml = {"home": 2.00, "away": 4.00}
+        assert _derive_dnb_from_ml(ml, "home") is None
+
+    def test_invalid_odds(self):
+        ml = {"home": 0, "away": 0, "draw": 0}
+        assert _derive_dnb_from_ml(ml, "home") is None
 
 
 # ── timing_band ─────────────────────────────────────────────────────────────
@@ -146,3 +266,4 @@ class TestPickTimingFields:
         assert pick.hours_to_kickoff is None
         assert pick.alerted_at is None
         assert pick.first_seen_at is None
+

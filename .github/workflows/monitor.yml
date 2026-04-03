@@ -14,6 +14,37 @@ on:
           - report
           - export
           - reset_clv
+          - debug_singbet
+      debug_league_slug:
+        description: 'League slug para debug da SingBet'
+        required: false
+        default: ''
+        type: string
+      debug_event_id:
+        description: 'Historical event id para debug direto da SingBet'
+        required: false
+        default: ''
+        type: string
+      debug_home_team:
+        description: 'Home team para debug da SingBet'
+        required: false
+        default: ''
+        type: string
+      debug_away_team:
+        description: 'Away team para debug da SingBet'
+        required: false
+        default: ''
+        type: string
+      debug_from_time:
+        description: 'Janela inicial ISO UTC ex: 2026-03-25T00:00:00Z'
+        required: false
+        default: ''
+        type: string
+      debug_to_time:
+        description: 'Janela final ISO UTC ex: 2026-04-05T23:59:59Z'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   monitor:
@@ -54,6 +85,14 @@ jobs:
             python monitor.py --export
           elif [ "$MODE" = "reset_clv" ]; then
             python reset_clv.py
+          elif [ "$MODE" = "debug_singbet" ]; then
+            python debug_singbet.py \
+              --event-id "${{ github.event.inputs.debug_event_id }}" \
+              --league-slug "${{ github.event.inputs.debug_league_slug }}" \
+              --home "${{ github.event.inputs.debug_home_team }}" \
+              --away "${{ github.event.inputs.debug_away_team }}" \
+              --from-time "${{ github.event.inputs.debug_from_time }}" \
+              --to-time "${{ github.event.inputs.debug_to_time }}"
           else
             python monitor.py
           fi

@@ -6873,5 +6873,30 @@
     "first_seen_at": "2026-04-02T23:00:42Z",
     "alerted_at": "2026-04-02T23:00:42Z",
     "hours_to_kickoff": 311.0
+  },
+  {
+    "pick_id": "e1fd260216",
+    "game": "Viborg FF vs AGF Aarhus",
+    "league": "Denmark - Superliga",
+    "league_slug": "denmark-superliga",
+    "home_team": "Viborg FF",
+    "away_team": "AGF Aarhus",
+    "market": "Totals",
+    "selection": "Over 2.75",
+    "kickoff": "06/04/2026 16:00",
+    "opening_odd": 2.0,
+    "fair_odd": 1.784,
+    "edge_pct": 12.11,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 69653724,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_singbet": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-03T13:00:35Z",
+    "alerted_at": "2026-04-03T13:00:35Z",
+    "hours_to_kickoff": 75.0
   }
 ]

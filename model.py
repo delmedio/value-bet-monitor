@@ -13,7 +13,7 @@ O modelo passou a usar bandas por mercado, em vez de um factor linear unico.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 MIN_ODD = 1.50
@@ -170,9 +170,116 @@ def _timing_bonus(tracked: list[dict]) -> float:
     return 0.0
 
 
-def adaptive_min_edge(market: str = "ML", opening_odd: float | None = None) -> float:
+def _league_bonus(tracked: list[dict], league: str) -> float:
     """
-    Ajuste por mercado + timing com base no tracking real do proprio bot.
+    Ajuste por liga com base no CLV historico.
+    Ligas com CLV consistentemente alto → relaxa threshold.
+    Ligas com CLV negativo → aperta.
+    Retorna ajuste entre -1.0 e +1.5.
+    """
+    if not league:
+        return 0.0
+
+    league_picks = [p for p in tracked if p.get("league") == league]
+    if len(league_picks) < 10:
+        return 0.0
+
+    avg_clv = sum(p["clv_real"] for p in league_picks) / len(league_picks)
+    beat_pct = sum(1 for p in league_picks if p["clv_real"] > 0) / len(league_picks) * 100
+
+    # Liga forte: CLV alto e consistente
+    if avg_clv >= 6 and beat_pct >= 60:
+        return -1.0
+    if avg_clv >= 4 and beat_pct >= 55:
+        return -0.5
+    # Liga fraca: CLV negativo
+    if avg_clv < -2:
+        return 1.5
+    if avg_clv < 0:
+        return 1.0
+    if avg_clv < 1.5 and beat_pct < 45:
+        return 0.5
+    return 0.0
+
+
+def _hour_band(hour: int) -> str:
+    """Classifica hora UTC em faixa do dia."""
+    if hour < 6:
+        return "night"      # 00-06 UTC (madrugada europeia)
+    if hour < 12:
+        return "morning"    # 06-12 UTC (manhã europeia)
+    if hour < 18:
+        return "afternoon"  # 12-18 UTC (tarde europeia)
+    return "evening"        # 18-00 UTC (noite europeia)
+
+
+def _extract_alert_hour(pick: dict) -> int | None:
+    """Extrai hora UTC do alerted_at."""
+    alerted = pick.get("alerted_at", "")
+    if not alerted:
+        return None
+    try:
+        dt = datetime.fromisoformat(alerted.replace("Z", "+00:00"))
+        return dt.hour
+    except Exception:
+        return None
+
+
+def _hour_bonus(tracked: list[dict], current_hour: int | None = None) -> float:
+    """
+    Ajuste com base na janela horaria UTC em que o pick é detectado.
+    A Bet365 actualiza preços com equipas humanas — há janelas
+    (ex: madrugada europeia) em que os preços ficam stale mais tempo.
+    Retorna ajuste entre -0.5 e +0.5.
+    """
+    if current_hour is None:
+        return 0.0
+
+    current_band = _hour_band(current_hour)
+
+    by_band: dict[str, list[float]] = {}
+    for p in tracked:
+        hour = _extract_alert_hour(p)
+        if hour is None:
+            continue
+        band = _hour_band(hour)
+        clv = p.get("clv_real")
+        if isinstance(clv, (int, float)):
+            by_band.setdefault(band, []).append(clv)
+
+    current_clvs = by_band.get(current_band, [])
+    if len(current_clvs) < 8:
+        return 0.0
+
+    avg_clv = sum(current_clvs) / len(current_clvs)
+
+    # Calcular CLV médio das outras faixas para comparação
+    other_clvs = []
+    for band, clvs in by_band.items():
+        if band != current_band and len(clvs) >= 5:
+            other_clvs.extend(clvs)
+
+    if not other_clvs:
+        return 0.0
+
+    avg_other = sum(other_clvs) / len(other_clvs)
+
+    # Faixa actual claramente melhor que as outras → relaxar
+    if avg_clv >= 5 and avg_clv > avg_other + 2:
+        return -0.5
+    # Faixa actual claramente pior → apertar
+    if avg_clv < 0 and avg_clv < avg_other - 2:
+        return 0.5
+    return 0.0
+
+
+def adaptive_min_edge(
+    market: str = "ML",
+    opening_odd: float | None = None,
+    league: str = "",
+) -> float:
+    """
+    Ajuste por mercado + timing + liga com base no tracking real do proprio bot.
     Parte de uma base mais conservadora calibrada nos dados historicos.
     """
     base_edge = base_min_edge(market, opening_odd)
@@ -207,10 +314,28 @@ def adaptive_min_edge(market: str = "ML", opening_odd: float | None = None) -> f
     # Ajuste por timing (super earlys vs late picks)
     adjustment += _timing_bonus(tracked)
 
-    return round(min(max(base_edge + adjustment, 3.5), 9.0), 2)
+    # Ajuste por liga (todas as tracked, não só do mercado)
+    try:
+        all_tracked = [
+            pick for pick in raw
+            if isinstance(pick, dict)
+            and isinstance(pick.get("clv_real"), (int, float))
+        ]
+        adjustment += _league_bonus(all_tracked, league)
+    except Exception:
+        pass
+
+    # Ajuste por hora do dia (janela de ineficiencia da Bet365)
+    try:
+        now_hour = datetime.utcnow().hour
+        adjustment += _hour_bonus(all_tracked, now_hour)
+    except Exception:
+        pass
+
+    return round(min(max(base_edge + adjustment, 3.0), 10.0), 2)
 
 
-def is_value_bet(opening_odd: float, market: str = "ML") -> dict | None:
+def is_value_bet(opening_odd: float, market: str = "ML", league: str = "") -> dict | None:
     """
     market:
       - ML   : Match Result
@@ -223,7 +348,7 @@ def is_value_bet(opening_odd: float, market: str = "ML") -> dict | None:
         return None
 
     edge = calculate_edge(opening_odd, fair)
-    min_edge = adaptive_min_edge(market, opening_odd)
+    min_edge = adaptive_min_edge(market, opening_odd, league=league)
     if edge < min_edge:
         return None
 

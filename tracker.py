@@ -175,7 +175,11 @@ def track_pending_picks() -> None:
 
 
 def _derive_dnb_from_ml(ml: dict, side: str) -> Optional[float]:
-    """Deriva DNB a partir de odds ML (1X2) usando probabilidades implícitas."""
+    """
+    Deriva DNB a partir de odds ML (1X2) usando probabilidades implícitas.
+    Nota: não é usada no tracking de fecho (preferimos DNB/AH0 reais da API).
+    Mantida como utility para cálculos auxiliares e testes.
+    """
     def f(v):
         try:
             return float(v) if v else 0.0
@@ -270,8 +274,9 @@ def _find_bookmaker_closing(pick: Pick, bookmaker_odds: dict, bookmaker_name: st
             if val and val > 1:
                 return val
         sp = bookmaker_odds.get("Spread", {})
-        hdp = f(sp.get("hdp") or sp.get("handicap") or 0)
-        if hdp == 0:
+        hdp_raw = sp.get("hdp") if sp.get("hdp") is not None else sp.get("handicap")
+        hdp = f(hdp_raw)
+        if abs(hdp) < 0.01:
             val = f(sp.get(side))
             if val and val > 1:
                 return val
@@ -292,7 +297,8 @@ def _find_bookmaker_closing(pick: Pick, bookmaker_odds: dict, bookmaker_name: st
 
         # Fallback: primeira linha, mas só se o hdp corresponde
         sp = bookmaker_odds.get("Spread", {})
-        sp_hdp = f(sp.get("hdp") or sp.get("handicap") or 0)
+        sp_hdp_raw = sp.get("hdp") if sp.get("hdp") is not None else sp.get("handicap")
+        sp_hdp = f(sp_hdp_raw)
         if target_hdp is not None and abs(sp_hdp - target_hdp) > 0.01:
             logger.warning(f"Spread hdp mismatch: pick={target_hdp}, {bookmaker_name}={sp_hdp} ({pick.game})")
             return None
@@ -305,9 +311,9 @@ def _find_bookmaker_closing(pick: Pick, bookmaker_odds: dict, bookmaker_name: st
         # Tentar match exacto pela line nas linhas todas
         tot_all = bookmaker_odds.get("Totals_all", [])
         if tot_all and target_line is not None:
-            match = _find_line_in_all(tot_all, "max", target_line)
+            match = _find_line_in_all(tot_all, "hdp", target_line)
             if not match:
-                match = _find_line_in_all(tot_all, "hdp", target_line)
+                match = _find_line_in_all(tot_all, "max", target_line)
             if match:
                 val = f(match.get(direction) or match.get("home" if direction == "over" else "away"))
                 if val and val > 1:
@@ -315,7 +321,7 @@ def _find_bookmaker_closing(pick: Pick, bookmaker_odds: dict, bookmaker_name: st
 
         # Fallback: primeira linha, mas só se a line corresponde
         tot = bookmaker_odds.get("Totals", {})
-        tot_line = f(tot.get("max") or tot.get("hdp") or 0)
+        tot_line = f(tot.get("hdp") or tot.get("max") or 0)
         if target_line is not None and abs(tot_line - target_line) > 0.01:
             logger.warning(f"Totals line mismatch: pick={target_line}, {bookmaker_name}={tot_line} ({pick.game})")
             return None

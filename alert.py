@@ -14,7 +14,6 @@ from html import escape
 
 import requests
 
-from model import adaptive_min_edge, estimate_fair_odd, minimum_acceptable_odd
 
 logger = logging.getLogger(__name__)
 
@@ -79,22 +78,24 @@ def _estimate_opp_odd(main_odd: float, margin: float = 0.05) -> float | None:
     return 1 / p_opp_raw
 
 
-def _equiv_min_odd(equiv_odd: float, market: str) -> float | None:
-    fair = estimate_fair_odd(equiv_odd, market)
-    if fair is None:
+def _format_equiv_line(
+    label: str,
+    equiv_odd: float | None,
+    main_odd: float,
+    main_min_odd: float,
+) -> str | None:
+    """
+    Calcula mín e edge para linhas equivalentes por proporção com o pick
+    principal, em vez de recalibrar cada linha independentemente.
+    Isto garante monotonia: linhas mais fáceis → mín mais baixo.
+    """
+    if equiv_odd is None or equiv_odd <= 1.0:
         return None
-    return minimum_acceptable_odd(fair, adaptive_min_edge(market, equiv_odd))
-
-
-def _format_equiv_line(label: str, odd: float | None, market: str) -> str | None:
-    if odd is None:
+    if main_odd <= 0:
         return None
 
-    min_odd = _equiv_min_odd(odd, market)
-    if min_odd is None:
-        return None
-
-    edge = round((odd / min_odd - 1) * 100, 2)
+    min_odd = round(main_min_odd * (equiv_odd / main_odd), 3)
+    edge = round((equiv_odd / min_odd - 1) * 100, 2)
     return f"• {label} | Mín: {min_odd:.2f} | Edge: {edge:+.2f}%"
 
 
@@ -167,6 +168,7 @@ def format_equivalent_lines(
     market: str,
     selection: str,
     opening_odd: float,
+    min_odd: float,
     odds_x: float | None = None,
     opp_odd: float | None = None,
 ) -> str:
@@ -175,8 +177,8 @@ def format_equivalent_lines(
     if market == "ML" and odds_x:
         dnb = calc_dnb(opening_odd, odds_x)
         ah025 = calc_ah025_from_ml(opening_odd, odds_x)
-        dnb_line = _format_equiv_line(f"DNB {selection}", dnb, "DNB")
-        ah_line = _format_equiv_line(f"AH {selection} -0.25", ah025, "AH")
+        dnb_line = _format_equiv_line(f"DNB {selection}", dnb, opening_odd, min_odd)
+        ah_line = _format_equiv_line(f"AH {selection} -0.25", ah025, opening_odd, min_odd)
         if dnb_line:
             lines.append(dnb_line)
         if ah_line:
@@ -186,8 +188,8 @@ def format_equivalent_lines(
         opp = _safe_float(opp_odd) or _estimate_opp_odd(opening_odd)
         harder = _quarter_line(opening_odd, opp, 0.0, harder=True) if opp else None
         easier = _quarter_line(opening_odd, opp, 0.0, harder=False) if opp else None
-        hard_line = _format_equiv_line(f"AH {selection} -0.25", harder, "AH")
-        easy_line = _format_equiv_line(f"AH {selection} +0.25", easier, "AH")
+        hard_line = _format_equiv_line(f"AH {selection} -0.25", harder, opening_odd, min_odd)
+        easy_line = _format_equiv_line(f"AH {selection} +0.25", easier, opening_odd, min_odd)
         if hard_line:
             lines.append(hard_line)
         if easy_line:
@@ -203,11 +205,11 @@ def format_equivalent_lines(
                 harder = _quarter_line(opening_odd, opp, line, harder=True)
 
                 if direction == "Over":
-                    low_line = _format_equiv_line(f"Over {line - 0.25:.2f}", easier, "OU")
-                    high_line = _format_equiv_line(f"Over {line + 0.25:.2f}", harder, "OU")
+                    low_line = _format_equiv_line(f"Over {line - 0.25:.2f}", easier, opening_odd, min_odd)
+                    high_line = _format_equiv_line(f"Over {line + 0.25:.2f}", harder, opening_odd, min_odd)
                 else:
-                    low_line = _format_equiv_line(f"Under {line - 0.25:.2f}", harder, "OU")
-                    high_line = _format_equiv_line(f"Under {line + 0.25:.2f}", easier, "OU")
+                    low_line = _format_equiv_line(f"Under {line - 0.25:.2f}", harder, opening_odd, min_odd)
+                    high_line = _format_equiv_line(f"Under {line + 0.25:.2f}", easier, opening_odd, min_odd)
 
                 if low_line:
                     lines.append(low_line)
@@ -225,8 +227,8 @@ def format_equivalent_lines(
             if opp:
                 harder = _quarter_line(opening_odd, opp, line, harder=True)
                 easier = _quarter_line(opening_odd, opp, line, harder=False)
-                hard_line = _format_equiv_line(f"AH {team} {line - 0.25:+.2f}", harder, "AH")
-                easy_line = _format_equiv_line(f"AH {team} {line + 0.25:+.2f}", easier, "AH")
+                hard_line = _format_equiv_line(f"AH {team} {line - 0.25:+.2f}", harder, opening_odd, min_odd)
+                easy_line = _format_equiv_line(f"AH {team} {line + 0.25:+.2f}", easier, opening_odd, min_odd)
                 if hard_line:
                     lines.append(hard_line)
                 if easy_line:
@@ -257,6 +259,7 @@ def send_alert(vb, hours_to_kickoff: float | None = None) -> None:
         market=vb.market,
         selection=vb.selection,
         opening_odd=vb.odds_b365,
+        min_odd=vb.min_odd,
         odds_x=vb.odds_x,
         opp_odd=vb.opp_odd,
     )

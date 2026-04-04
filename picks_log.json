@@ -8110,5 +8110,31 @@
     "first_seen_at": "2026-04-04T12:00:38Z",
     "alerted_at": "2026-04-04T12:00:38Z",
     "hours_to_kickoff": 69.0
+  },
+  {
+    "pick_id": "0acfbab5c3",
+    "game": "Perth Glory FC vs Macarthur FC",
+    "league": "Australia - A-League",
+    "league_slug": "australia-a-league",
+    "home_team": "Perth Glory FC",
+    "away_team": "Macarthur FC",
+    "market": "Totals",
+    "selection": "Over 3.0",
+    "kickoff": "12/04/2026 09:00",
+    "opening_odd": 2.0,
+    "fair_odd": 1.784,
+    "edge_pct": 12.11,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 63684721,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-04T13:00:38Z",
+    "alerted_at": "2026-04-04T13:00:38Z",
+    "hours_to_kickoff": 188.0
   }
 ]

@@ -16,22 +16,27 @@ on:
           - reset_clv
           - debug_singbet
       debug_league_slug:
-        description: 'League slug para debug da SingBet'
+        description: 'League slug para debug do bookmaker'
         required: false
         default: ''
         type: string
       debug_event_id:
-        description: 'Historical event id para debug direto da SingBet'
+        description: 'Historical event id para debug direto do bookmaker'
         required: false
         default: ''
         type: string
+      debug_bookmaker:
+        description: 'Bookmaker exato da API para debug histórico'
+        required: false
+        default: 'Sbobet'
+        type: string
       debug_home_team:
-        description: 'Home team para debug da SingBet'
+        description: 'Home team para debug do bookmaker'
         required: false
         default: ''
         type: string
       debug_away_team:
-        description: 'Away team para debug da SingBet'
+        description: 'Away team para debug do bookmaker'
         required: false
         default: ''
         type: string
@@ -88,6 +93,7 @@ jobs:
           elif [ "$MODE" = "debug_singbet" ]; then
             python debug_singbet.py \
               --event-id "${{ github.event.inputs.debug_event_id }}" \
+              --bookmaker "${{ github.event.inputs.debug_bookmaker }}" \
               --league-slug "${{ github.event.inputs.debug_league_slug }}" \
               --home "${{ github.event.inputs.debug_home_team }}" \
               --away "${{ github.event.inputs.debug_away_team }}" \

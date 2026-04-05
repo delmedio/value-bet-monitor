@@ -277,19 +277,19 @@ def _extract_bookmaker_odds(data: dict, bookmaker_name: str) -> dict:
 
 def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     """
-    Analisa um evento e devolve o melhor pick (maior edge, SingBet ainda fechada).
+    Analisa um evento e devolve o melhor pick (maior edge, Sbobet ainda fechada).
     Candidatos por ordem: AH principal → DNB real → ML
     Totals: Over vs Under — escolhe o de maior edge.
     """
     bms      = event_data.get("bookmakers", {})
     b365_raw = bms.get("Bet365", [])
-    singbet_raw  = bms.get("SingBet", [])
+    sbo_raw  = bms.get("Sbobet", [])
 
     if not b365_raw:
         return None
 
     b365 = _extract_markets(b365_raw)
-    singbet  = _extract_markets(singbet_raw) if singbet_raw else {}
+    sbo  = _extract_markets(sbo_raw) if sbo_raw else {}
 
     home  = event_data.get("home", "")
     away  = event_data.get("away", "")
@@ -323,9 +323,9 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
     b_ml  = b365.get("ML", {})
     b_ah  = b365.get("Spread", {})
     b_dnb = b365.get("Draw No Bet", {})
-    singbet_ml = singbet.get("ML", {})
-    singbet_ah = singbet.get("Spread", {})
-    singbet_dnb = singbet.get("Draw No Bet", {})
+    sbo_ml  = sbo.get("ML", {})
+    sbo_ah  = sbo.get("Spread", {})
+    sbo_dnb = sbo.get("Draw No Bet", {})
 
     draw_odd = _float(b_ml.get("draw")) or None
 
@@ -337,34 +337,32 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
         ah_odd = _float(b_ah.get(side))
         ah_hdp = _float(b_ah.get("hdp") or 0)
         if ah_odd:
-            singbet_odd = _float(singbet_ah.get(side)) or None
+            sbo_odd = _float(sbo_ah.get(side)) or None
             if ah_hdp == 0:
-                # AH 0 e equivalente a DNB. Se a API ja trouxer DNB, evitamos
-                # alertas duplicados para o mesmo jogo.
                 if not dnb_odd:
                     candidates.append((ah_odd, "DNB", team,
-                                       None, b_ah.get("href", ""), singbet_odd))
+                                       None, b_ah.get("href", ""), sbo_odd))
             else:
                 sign = f"{ah_hdp:+.2f}"
                 candidates.append((ah_odd, "Spread", f"{team} {sign}".strip(),
-                                    ah_hdp, b_ah.get("href", ""), singbet_odd))
+                                    ah_hdp, b_ah.get("href", ""), sbo_odd))
 
         # 2. Draw No Bet real da API
         if dnb_odd:
-            singbet_odd = _float(singbet_dnb.get(side)) or None
+            sbo_odd = _float(sbo_dnb.get(side)) or None
             candidates.append((dnb_odd, "DNB", team,
-                                None, b_dnb.get("href", ""), singbet_odd))
+                                None, b_dnb.get("href", ""), sbo_odd))
 
         # 3. ML directo
         ml_odd = _float(b_ml.get(side))
         if ml_odd:
-            singbet_odd = _float(singbet_ml.get(side)) or None
+            sbo_odd = _float(sbo_ml.get(side)) or None
             candidates.append((ml_odd, "ML", team,
-                                None, b_ml.get("href", ""), singbet_odd))
+                                None, b_ml.get("href", ""), sbo_odd))
 
-        for odd, mkt, sel, hdp_val, href, singbet_odd in candidates:
-            # Só early bets — SingBet ainda não abriu
-            if singbet_odd is not None:
+        for odd, mkt, sel, hdp_val, href, sbo_odd in candidates:
+            # Só early bets — Sbobet ainda não abriu
+            if sbo_odd is not None:
                 continue
             result = is_value_bet(odd, market=MKT_TYPE.get(mkt, "ML"), league=league)
             if result and result["edge_pct"] > best_edge:
@@ -386,8 +384,8 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
                 )
 
     # ── Over/Under (Totals) — um pick por jogo ────────────────────────────────
-    b_ou   = b365.get("Totals", {})
-    singbet_ou = singbet.get("Totals", {})
+    b_ou  = b365.get("Totals", {})
+    sbo_ou = sbo.get("Totals", {})
     if b_ou:
         line      = _float(b_ou.get("max") or b_ou.get("hdp") or 0)
         over_odd  = _float(b_ou.get("over") or b_ou.get("home"))
@@ -396,9 +394,9 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
 
         for direction, odd, opp in [("Over", over_odd, under_odd),
                                     ("Under", under_odd, over_odd)]:
-            singbet_key = "over" if direction == "Over" else "under"
-            singbet_odd = _float(singbet_ou.get(singbet_key) or 0) or None
-            if singbet_odd is not None:
+            sbo_key = "over" if direction == "Over" else "under"
+            sbo_odd = _float(sbo_ou.get(sbo_key) or 0) or None
+            if sbo_odd is not None:
                 continue
             result = is_value_bet(odd, market="OU", league=league)
             if result and result["edge_pct"] > best_edge:
@@ -492,7 +490,7 @@ def fetch_odds_multi(event_ids: list[int]) -> list[dict]:
                 "/odds/multi",
                 {
                     "eventIds": ",".join(str(event_id) for event_id in batch),
-                    "bookmakers": "Bet365,SingBet",
+                    "bookmakers": "Bet365,Sbobet",
                 },
             )
         except Exception as e:

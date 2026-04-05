@@ -88,8 +88,10 @@ class TestCalculateEdge:
 # ── is_value_bet ─────────────────────────────────────────────────────────────
 
 class TestIsValueBet:
-    def test_dnb_high_edge_returns_dict(self):
-        # DNB 2.10: factor 0.955, fair ~2.006, edge ~4.7%, min_edge 4.5
+    def test_dnb_high_edge_returns_dict(self, tmp_path, monkeypatch):
+        # DNB 2.10: factor 0.955, fair ~2.006, edge ~4.7%, min_edge base 4.5
+        # Isolar do picks_log.json real para evitar ajuste adaptativo
+        monkeypatch.setattr("model.LEARNING_PICKS_FILE", tmp_path / "nonexistent.json")
         result = is_value_bet(2.10, "DNB")
         assert result is not None
         assert result["edge_pct"] > 4.0

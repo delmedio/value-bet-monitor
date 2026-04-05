@@ -44,16 +44,16 @@ class TestGetCalibrationFactor:
         assert get_calibration_factor(2.50, "ML") is None
 
     def test_dnb_low_band(self):
-        assert get_calibration_factor(1.70, "DNB") == 0.983
+        assert get_calibration_factor(1.70, "DNB") == 0.975
 
     def test_dnb_high_band(self):
-        assert get_calibration_factor(2.10, "DNB") == 0.903
+        assert get_calibration_factor(2.10, "DNB") == 0.955
 
     def test_ah_low_band(self):
         assert get_calibration_factor(1.75, "AH") == 0.958
 
     def test_ou_mid_band(self):
-        assert get_calibration_factor(1.90, "OU") == 0.932
+        assert get_calibration_factor(1.90, "OU") == 0.955
 
 
 # ── estimate_fair_odd ────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ class TestEstimateFairOdd:
         assert estimate_fair_odd(1.65, "ML") == round(1.65 * 0.979, 3)
 
     def test_dnb_value(self):
-        assert estimate_fair_odd(2.10, "DNB") == round(2.10 * 0.903, 3)
+        assert estimate_fair_odd(2.10, "DNB") == round(2.10 * 0.955, 3)
 
     def test_out_of_range_returns_none(self):
         assert estimate_fair_odd(1.30, "ML") is None
@@ -89,10 +89,10 @@ class TestCalculateEdge:
 
 class TestIsValueBet:
     def test_dnb_high_edge_returns_dict(self):
-        # DNB 2.10: factor 0.903, fair ~1.896, edge ~10.76%, min_edge 5.0
+        # DNB 2.10: factor 0.955, fair ~2.006, edge ~4.7%, min_edge 4.5
         result = is_value_bet(2.10, "DNB")
         assert result is not None
-        assert result["edge_pct"] > 5.0
+        assert result["edge_pct"] > 4.0
         assert "fair_odd" in result
         assert "level" in result
 

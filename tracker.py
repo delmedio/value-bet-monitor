@@ -525,4 +525,3 @@ def get_learning_snapshot(min_samples: int = 5) -> dict:
         "by_league": league_stats,
         "by_hour": hour_stats,
     }
-

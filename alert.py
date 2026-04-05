@@ -659,4 +659,3 @@ def send_export() -> None:
         ),
         attachments=[(filename, payload.encode("utf-8"), "json")],
     )
-

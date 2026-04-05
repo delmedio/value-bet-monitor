@@ -24,7 +24,7 @@ def min_kickoff_date() -> str:
 LEARNING_PICKS_FILE = Path("picks_log.json")
 
 MARKET_PROFILES = {
-    # Match Result puro: manter bem apertado.
+    # Match Result puro: sem dados tracked, manter restritivo.
     "ML": {
         "max_odd": 2.20,
         "bands": [
@@ -33,28 +33,33 @@ MARKET_PROFILES = {
             (2.00, 2.20, 0.976, 8.0),
         ],
     },
-    # DNB mostrou-se muito mais robusto no histórico.
+    # DNB — recalibrado com 51 CLVs reais (Sbobet/Stake closing).
+    # Factores anteriores (0.923/0.903) produziam edge ~10% fictício.
+    # Break-even real: ~0.948 (1.80-2.00) e ~0.963 (2.00-2.20).
+    # Factores ligeiramente abaixo do break-even para manter margem de selecção.
     "DNB": {
         "max_odd": 2.20,
         "bands": [
-            (1.50, 1.80, 0.983, 4.5),
-            (1.80, 2.00, 0.923, 4.5),
-            (2.00, 2.20, 0.903, 5.0),
+            (1.50, 1.80, 0.975, 3.5),
+            (1.80, 2.00, 0.950, 4.0),
+            (2.00, 2.20, 0.955, 4.5),
         ],
     },
+    # AH — 1 tracked, dados insuficientes. Ajuste proporcional ao DNB.
     "AH": {
         "max_odd": 2.20,
         "bands": [
             (1.50, 2.00, 0.958, 4.0),
-            (2.00, 2.20, 0.872, 5.0),
+            (2.00, 2.20, 0.940, 4.5),
         ],
     },
+    # OU — 5 tracked, CLV -0.42% (quase break-even). Ajuste moderado.
     "OU": {
         "max_odd": 2.20,
         "bands": [
-            (1.50, 1.80, 0.990, 4.0),
-            (1.80, 2.00, 0.932, 4.5),
-            (2.00, 2.20, 0.892, 5.0),
+            (1.50, 1.80, 0.985, 3.5),
+            (1.80, 2.00, 0.955, 4.0),
+            (2.00, 2.20, 0.940, 4.5),
         ],
     },
 }

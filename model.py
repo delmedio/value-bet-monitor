@@ -13,7 +13,7 @@ O modelo passou a usar bandas por mercado, em vez de um factor linear unico.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 MIN_ODD = 1.50
@@ -332,7 +332,7 @@ def adaptive_min_edge(
 
     # Ajuste por hora do dia (janela de ineficiencia da Bet365)
     try:
-        now_hour = datetime.utcnow().hour
+        now_hour = datetime.now(timezone.utc).hour
         adjustment += _hour_bonus(all_tracked, now_hour)
     except Exception:
         pass
@@ -364,3 +364,4 @@ def is_value_bet(opening_odd: float, market: str = "ML", league: str = "") -> di
         "min_edge_pct": min_edge,
         "level": ev_level(edge),
     }
+

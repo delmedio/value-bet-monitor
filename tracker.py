@@ -288,10 +288,20 @@ def _find_bookmaker_closing(pick: Pick, bookmaker_odds: dict, bookmaker_name: st
     elif pick.market == "Spread":
         target_hdp = _parse_hdp_from_selection(pick.selection)
 
+        # A API guarda hdp na perspectiva do home.
+        # O scraper (corrigido) guarda hdp na perspectiva do side do pick.
+        # Para match com a API, converter de volta para perspectiva home.
+        api_hdp = target_hdp
+        if target_hdp is not None and side == "away":
+            api_hdp = -target_hdp
+
         # Tentar match exacto pelo handicap nas linhas todas
         sp_all = bookmaker_odds.get("Spread_all", [])
-        if sp_all and target_hdp is not None:
-            match = _find_line_in_all(sp_all, "hdp", target_hdp)
+        if sp_all and api_hdp is not None:
+            match = _find_line_in_all(sp_all, "hdp", api_hdp)
+            if not match:
+                # Fallback: tentar com o valor original (compatibilidade com picks antigos)
+                match = _find_line_in_all(sp_all, "hdp", target_hdp)
             if match:
                 return f(match.get(side)) or None
 
@@ -299,9 +309,11 @@ def _find_bookmaker_closing(pick: Pick, bookmaker_odds: dict, bookmaker_name: st
         sp = bookmaker_odds.get("Spread", {})
         sp_hdp_raw = sp.get("hdp") if sp.get("hdp") is not None else sp.get("handicap")
         sp_hdp = f(sp_hdp_raw)
-        if target_hdp is not None and abs(sp_hdp - target_hdp) > 0.01:
-            logger.warning(f"Spread hdp mismatch: pick={target_hdp}, {bookmaker_name}={sp_hdp} ({pick.game})")
-            return None
+        # Aceitar match com api_hdp (novo) ou target_hdp (antigo)
+        if api_hdp is not None and abs(sp_hdp - api_hdp) > 0.01:
+            if target_hdp is not None and abs(sp_hdp - target_hdp) > 0.01:
+                logger.warning(f"Spread hdp mismatch: pick={target_hdp}, {bookmaker_name}={sp_hdp} ({pick.game})")
+                return None
         return f(sp.get(side)) or None
 
     elif pick.market == "Totals":
@@ -525,4 +537,3 @@ def get_learning_snapshot(min_samples: int = 5) -> dict:
         "by_league": league_stats,
         "by_hour": hour_stats,
     }
-

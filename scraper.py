@@ -155,6 +155,9 @@ def _extract_markets(bookmaker_markets: list) -> dict:
         odds_list = mkt.get("odds", [])
         if odds_list:
             result[name] = {**odds_list[0], "href": mkt.get("href", "")}
+            # Guardar todas as linhas para Spread/Totals (múltiplos handicaps/lines)
+            if name in ("Spread", "Totals") and len(odds_list) > 1:
+                result[f"{name}_all"] = odds_list
     return result
 
 
@@ -321,31 +324,50 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
 
     # ── ML / DNB / AH por equipa ─────────────────────────────────────────────
     b_ml  = b365.get("ML", {})
-    b_ah  = b365.get("Spread", {})
     b_dnb = b365.get("Draw No Bet", {})
     sbo_ml  = sbo.get("ML", {})
-    sbo_ah  = sbo.get("Spread", {})
     sbo_dnb = sbo.get("Draw No Bet", {})
 
+    # Todas as linhas de Spread (múltiplos handicaps)
+    b_ah_first = b365.get("Spread", {})
+    b_ah_all   = b365.get("Spread_all", [b_ah_first] if b_ah_first else [])
+    sbo_ah_first = sbo.get("Spread", {})
+    sbo_ah_all   = sbo.get("Spread_all", [sbo_ah_first] if sbo_ah_first else [])
+
     draw_odd = _float(b_ml.get("draw")) or None
+
+    def _find_sbo_spread(home_hdp: float, side: str) -> float | None:
+        """Encontra a odd Sbobet para um handicap específico."""
+        for sline in sbo_ah_all:
+            shdp = sline.get("hdp") if sline.get("hdp") is not None else sline.get("handicap")
+            if shdp is not None and abs(_float(shdp) - home_hdp) < 0.01:
+                val = _float(sline.get(side))
+                return val if val else None
+        return None
 
     for side, team in [("home", home), ("away", away)]:
         candidates = []
         dnb_odd = _float(b_dnb.get(side))
 
-        # 1. AH principal
-        ah_odd = _float(b_ah.get(side))
-        ah_hdp = _float(b_ah.get("hdp") or 0)
-        if ah_odd:
-            sbo_odd = _float(sbo_ah.get(side)) or None
-            if ah_hdp == 0:
-                if not dnb_odd:
-                    candidates.append((ah_odd, "DNB", team,
-                                       None, b_ah.get("href", ""), sbo_odd))
-            else:
-                sign = f"{ah_hdp:+.2f}"
-                candidates.append((ah_odd, "Spread", f"{team} {sign}".strip(),
-                                    ah_hdp, b_ah.get("href", ""), sbo_odd))
+        # 1. TODAS as linhas de Spread (não só a primeira)
+        for ah_line in b_ah_all:
+            ah_odd = _float(ah_line.get(side))
+            hdp_raw = ah_line.get("hdp") if ah_line.get("hdp") is not None else ah_line.get("handicap")
+            home_hdp = _float(hdp_raw if hdp_raw is not None else 0)
+            # hdp da API é sempre do home → inverter para o away
+            side_hdp = home_hdp if side == "home" else -home_hdp
+
+            if ah_odd:
+                sbo_odd = _find_sbo_spread(home_hdp, side)
+                if abs(side_hdp) < 0.01:
+                    # hdp 0 = DNB — só adicionar se não houver DNB real
+                    if not dnb_odd:
+                        candidates.append((ah_odd, "DNB", team,
+                                           None, ah_line.get("href", ""), sbo_odd))
+                else:
+                    sign = f"{side_hdp:+.2f}"
+                    candidates.append((ah_odd, "Spread", f"{team} {sign}".strip(),
+                                        side_hdp, ah_line.get("href", ""), sbo_odd))
 
         # 2. Draw No Bet real da API
         if dnb_odd:
@@ -383,20 +405,38 @@ def _analyse_event(event_data: dict) -> Optional[ValueBet]:
                     odds_singbet=None,
                 )
 
-    # ── Over/Under (Totals) — um pick por jogo ────────────────────────────────
-    b_ou  = b365.get("Totals", {})
-    sbo_ou = sbo.get("Totals", {})
-    if b_ou:
-        line      = _float(b_ou.get("max") or b_ou.get("hdp") or 0)
-        over_odd  = _float(b_ou.get("over") or b_ou.get("home"))
-        under_odd = _float(b_ou.get("under") or b_ou.get("away"))
-        href_ou   = b_ou.get("href", "")
+    # ── Over/Under (Totals) — TODAS as linhas ────────────────────────────────
+    b_ou_first = b365.get("Totals", {})
+    b_ou_all   = b365.get("Totals_all", [b_ou_first] if b_ou_first else [])
+    sbo_ou_first = sbo.get("Totals", {})
+    sbo_ou_all   = sbo.get("Totals_all", [sbo_ou_first] if sbo_ou_first else [])
+
+    def _find_sbo_total(target_line: float, direction: str) -> float | None:
+        """Encontra a odd Sbobet para uma linha de Totals específica."""
+        key = "over" if direction == "Over" else "under"
+        alt = "home" if direction == "Over" else "away"
+        for sline in sbo_ou_all:
+            sval = _float(sline.get("hdp") or sline.get("max") or 0)
+            if sval and abs(sval - target_line) < 0.01:
+                val = _float(sline.get(key) or sline.get(alt))
+                return val if val else None
+        return None
+
+    for ou_line in b_ou_all:
+        line      = _float(ou_line.get("max") or ou_line.get("hdp") or 0)
+        over_odd  = _float(ou_line.get("over") or ou_line.get("home"))
+        under_odd = _float(ou_line.get("under") or ou_line.get("away"))
+        href_ou   = ou_line.get("href", b_ou_first.get("href", ""))
+
+        if not line:
+            continue
 
         for direction, odd, opp in [("Over", over_odd, under_odd),
                                     ("Under", under_odd, over_odd)]:
-            sbo_key = "over" if direction == "Over" else "under"
-            sbo_odd = _float(sbo_ou.get(sbo_key) or 0) or None
+            sbo_odd = _find_sbo_total(line, direction)
             if sbo_odd is not None:
+                continue
+            if not odd:
                 continue
             result = is_value_bet(odd, market="OU", league=league)
             if result and result["edge_pct"] > best_edge:

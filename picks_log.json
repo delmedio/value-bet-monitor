@@ -11542,5 +11542,31 @@
     "first_seen_at": "2026-04-07T20:00:40Z",
     "alerted_at": "2026-04-07T20:00:40Z",
     "hours_to_kickoff": 90.0
+  },
+  {
+    "pick_id": "ae656e5212",
+    "game": "Juve Stabia vs US Catanzaro",
+    "league": "Italy - Serie B",
+    "league_slug": "italy-serie-b",
+    "home_team": "Juve Stabia",
+    "away_team": "US Catanzaro",
+    "market": "Totals",
+    "selection": "Over 2.5",
+    "kickoff": "18/04/2026 17:30",
+    "opening_odd": 1.95,
+    "fair_odd": 1.862,
+    "edge_pct": 4.73,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 62484322,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-07T21:00:44Z",
+    "alerted_at": "2026-04-07T21:00:44Z",
+    "hours_to_kickoff": 260.5
   }
 ]

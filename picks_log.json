@@ -10970,5 +10970,31 @@
     "first_seen_at": "2026-04-07T16:00:47Z",
     "alerted_at": "2026-04-07T16:00:47Z",
     "hours_to_kickoff": 54.0
+  },
+  {
+    "pick_id": "d794920b11",
+    "game": "Colchester United vs Swindon Town",
+    "league": "England - League Two",
+    "league_slug": "england-league-two",
+    "home_team": "Colchester United",
+    "away_team": "Swindon Town",
+    "market": "DNB",
+    "selection": "Swindon Town",
+    "kickoff": "10/04/2026 18:45",
+    "opening_odd": 2.1,
+    "fair_odd": 2.006,
+    "edge_pct": 4.69,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61494979,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-07T17:00:48Z",
+    "alerted_at": "2026-04-07T17:00:48Z",
+    "hours_to_kickoff": 73.7
   }
 ]

@@ -13232,5 +13232,31 @@
     "first_seen_at": "2026-04-08T17:00:50Z",
     "alerted_at": "2026-04-08T17:00:50Z",
     "hours_to_kickoff": 62.5
+  },
+  {
+    "pick_id": "3113c77732",
+    "game": "Goztepe Izmir vs Kasimpasa Istanbul",
+    "league": "Turkiye - Super Lig",
+    "league_slug": "turkiye-super-lig",
+    "home_team": "Goztepe Izmir",
+    "away_team": "Kasimpasa Istanbul",
+    "market": "Totals",
+    "selection": "Under 2.25",
+    "kickoff": "12/04/2026 14:00",
+    "opening_odd": 1.975,
+    "fair_odd": 1.886,
+    "edge_pct": 4.72,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61730150,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-08T18:00:57Z",
+    "alerted_at": "2026-04-08T18:00:57Z",
+    "hours_to_kickoff": 92.0
   }
 ]

@@ -13336,5 +13336,31 @@
     "first_seen_at": "2026-04-08T19:00:53Z",
     "alerted_at": "2026-04-08T19:00:53Z",
     "hours_to_kickoff": 91.5
+  },
+  {
+    "pick_id": "df18568bb9",
+    "game": "Los Angeles FC vs San Jose Earthquakes",
+    "league": "USA - MLS",
+    "league_slug": "usa-mls",
+    "home_team": "Los Angeles FC",
+    "away_team": "San Jose Earthquakes",
+    "market": "Totals",
+    "selection": "Under 3.25",
+    "kickoff": "19/04/2026 23:00",
+    "opening_odd": 2.0,
+    "fair_odd": 1.88,
+    "edge_pct": 6.38,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 66299034,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-08T20:00:41Z",
+    "alerted_at": "2026-04-08T20:00:41Z",
+    "hours_to_kickoff": 267.0
   }
 ]

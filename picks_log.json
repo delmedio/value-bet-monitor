@@ -13024,5 +13024,31 @@
     "first_seen_at": "2026-04-08T12:00:49Z",
     "alerted_at": "2026-04-08T12:00:49Z",
     "hours_to_kickoff": 75.5
+  },
+  {
+    "pick_id": "974e7a3758",
+    "game": "Lillestroem SK vs IK Start",
+    "league": "Norway - Eliteserien",
+    "league_slug": "norway-eliteserien",
+    "home_team": "Lillestroem SK",
+    "away_team": "IK Start",
+    "market": "Totals",
+    "selection": "Under 3.25",
+    "kickoff": "11/04/2026 12:00",
+    "opening_odd": 2.0,
+    "fair_odd": 1.88,
+    "edge_pct": 6.38,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 67015098,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-08T13:00:49Z",
+    "alerted_at": "2026-04-08T13:00:49Z",
+    "hours_to_kickoff": 71.0
   }
 ]

@@ -13128,5 +13128,31 @@
     "first_seen_at": "2026-04-08T14:00:48Z",
     "alerted_at": "2026-04-08T14:00:48Z",
     "hours_to_kickoff": 363.0
+  },
+  {
+    "pick_id": "fd77edd83e",
+    "game": "Besiktas Istanbul vs Antalyaspor",
+    "league": "Turkiye - Super Lig",
+    "league_slug": "turkiye-super-lig",
+    "home_team": "Besiktas Istanbul",
+    "away_team": "Antalyaspor",
+    "market": "Totals",
+    "selection": "Over 3.0",
+    "kickoff": "10/04/2026 17:00",
+    "opening_odd": 2.025,
+    "fair_odd": 1.903,
+    "edge_pct": 6.41,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61730152,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-08T15:00:59Z",
+    "alerted_at": "2026-04-08T15:00:59Z",
+    "hours_to_kickoff": 50.0
   }
 ]

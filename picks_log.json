@@ -15156,5 +15156,31 @@
     "first_seen_at": "2026-04-09T17:00:41Z",
     "alerted_at": "2026-04-09T17:00:41Z",
     "hours_to_kickoff": 66.0
+  },
+  {
+    "pick_id": "2d232da100",
+    "game": "Real Valladolid vs SD Eibar",
+    "league": "Spain - LaLiga 2",
+    "league_slug": "spain-laliga-2",
+    "home_team": "Real Valladolid",
+    "away_team": "SD Eibar",
+    "market": "DNB",
+    "selection": "SD Eibar",
+    "kickoff": "13/04/2026 18:30",
+    "opening_odd": 2.2,
+    "fair_odd": 2.101,
+    "edge_pct": 4.71,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61623794,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-09T22:00:44Z",
+    "alerted_at": "2026-04-09T22:00:44Z",
+    "hours_to_kickoff": 92.5
   }
 ]

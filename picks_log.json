@@ -15182,5 +15182,31 @@
     "first_seen_at": "2026-04-09T22:00:44Z",
     "alerted_at": "2026-04-09T22:00:44Z",
     "hours_to_kickoff": 92.5
+  },
+  {
+    "pick_id": "d403892581",
+    "game": "FC Barcelona vs RC Celta de Vigo",
+    "league": "Spain - LaLiga",
+    "league_slug": "spain-laliga",
+    "home_team": "FC Barcelona",
+    "away_team": "RC Celta de Vigo",
+    "market": "Spread",
+    "selection": "RC Celta de Vigo +1.50",
+    "kickoff": "22/04/2026 19:30",
+    "opening_odd": 2.025,
+    "fair_odd": 1.903,
+    "edge_pct": 6.41,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61624580,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-09T23:00:42Z",
+    "alerted_at": "2026-04-09T23:00:42Z",
+    "hours_to_kickoff": 308.5
   }
 ]

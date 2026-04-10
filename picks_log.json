@@ -17470,5 +17470,31 @@
     "first_seen_at": "2026-04-10T15:00:46Z",
     "alerted_at": "2026-04-10T15:00:46Z",
     "hours_to_kickoff": 148.0
+  },
+  {
+    "pick_id": "da6dc2dbeb",
+    "game": "CS Cienciano vs Academia Puerto Cabello",
+    "league": "International Clubs - Copa Sudamericana",
+    "league_slug": "international-clubs-copa-sudamericana",
+    "home_team": "CS Cienciano",
+    "away_team": "Academia Puerto Cabello",
+    "market": "Spread",
+    "selection": "CS Cienciano -1.00",
+    "kickoff": "17/04/2026 02:00",
+    "opening_odd": 1.875,
+    "fair_odd": 1.796,
+    "edge_pct": 4.4,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 70075134,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-10T17:00:45Z",
+    "alerted_at": "2026-04-10T17:00:45Z",
+    "hours_to_kickoff": 153.0
   }
 ]

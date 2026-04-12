@@ -19368,5 +19368,31 @@
     "first_seen_at": "2026-04-12T08:00:41Z",
     "alerted_at": "2026-04-12T08:00:41Z",
     "hours_to_kickoff": 227.5
+  },
+  {
+    "pick_id": "f1f4f32a01",
+    "game": "Angers SCO vs Le Havre AC",
+    "league": "France - Ligue 1",
+    "league_slug": "france-ligue-1",
+    "home_team": "Angers SCO",
+    "away_team": "Le Havre AC",
+    "market": "DNB",
+    "selection": "Le Havre AC",
+    "kickoff": "18/04/2026 17:00",
+    "opening_odd": 1.8,
+    "fair_odd": 1.71,
+    "edge_pct": 5.26,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61526524,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-12T10:00:42Z",
+    "alerted_at": "2026-04-12T10:00:42Z",
+    "hours_to_kickoff": 151.0
   }
 ]

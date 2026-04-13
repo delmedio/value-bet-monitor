@@ -21214,5 +21214,31 @@
     "first_seen_at": "2026-04-13T15:00:47Z",
     "alerted_at": "2026-04-13T15:00:47Z",
     "hours_to_kickoff": 117.0
+  },
+  {
+    "pick_id": "0285d3e83a",
+    "game": "ESTAC Troyes vs US Boulogne",
+    "league": "France - Ligue 2",
+    "league_slug": "france-ligue-2",
+    "home_team": "ESTAC Troyes",
+    "away_team": "US Boulogne",
+    "market": "Spread",
+    "selection": "US Boulogne +1.00",
+    "kickoff": "18/04/2026 12:00",
+    "opening_odd": 2.0,
+    "fair_odd": 1.88,
+    "edge_pct": 6.38,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 62716775,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-13T16:00:46Z",
+    "alerted_at": "2026-04-13T16:00:46Z",
+    "hours_to_kickoff": 116.0
   }
 ]

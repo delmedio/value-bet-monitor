@@ -21110,5 +21110,31 @@
     "first_seen_at": "2026-04-13T11:00:42Z",
     "alerted_at": "2026-04-13T11:00:42Z",
     "hours_to_kickoff": 151.0
+  },
+  {
+    "pick_id": "be38fda21d",
+    "game": "VFL Wolfsburg vs Borussia Monchengladbach",
+    "league": "Germany - Bundesliga",
+    "league_slug": "germany-bundesliga",
+    "home_team": "VFL Wolfsburg",
+    "away_team": "Borussia Monchengladbach",
+    "market": "Spread",
+    "selection": "VFL Wolfsburg -0.25",
+    "kickoff": "25/04/2026 13:30",
+    "opening_odd": 2.05,
+    "fair_odd": 1.927,
+    "edge_pct": 6.38,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61514156,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-13T13:00:47Z",
+    "alerted_at": "2026-04-13T13:00:47Z",
+    "hours_to_kickoff": 288.5
   }
 ]

@@ -22514,5 +22514,31 @@
     "first_seen_at": "2026-04-15T12:00:43Z",
     "alerted_at": "2026-04-15T12:00:43Z",
     "hours_to_kickoff": 100.0
+  },
+  {
+    "pick_id": "d47e36334b",
+    "game": "FC Seoul vs Daejeon Citizen FC",
+    "league": "Republic of Korea - K-League 1",
+    "league_slug": "republic-of-korea-k-league-1",
+    "home_team": "FC Seoul",
+    "away_team": "Daejeon Citizen FC",
+    "market": "Totals",
+    "selection": "Over 2.5",
+    "kickoff": "18/04/2026 05:00",
+    "opening_odd": 2.0,
+    "fair_odd": 1.88,
+    "edge_pct": 6.38,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 67817620,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-15T13:00:42Z",
+    "alerted_at": "2026-04-15T13:00:42Z",
+    "hours_to_kickoff": 64.0
   }
 ]

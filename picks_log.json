@@ -24698,5 +24698,31 @@
     "first_seen_at": "2026-04-16T10:00:46Z",
     "alerted_at": "2026-04-16T10:00:46Z",
     "hours_to_kickoff": 251.5
+  },
+  {
+    "pick_id": "8cfbd2272f",
+    "game": "Libertad Asuncion vs CSD Independiente del Valle",
+    "league": "International Clubs - Copa Libertadores",
+    "league_slug": "international-clubs-copa-libertadores",
+    "home_team": "Libertad Asuncion",
+    "away_team": "CSD Independiente del Valle",
+    "market": "DNB",
+    "selection": "CSD Independiente del Valle",
+    "kickoff": "28/04/2026 22:00",
+    "opening_odd": 1.8,
+    "fair_odd": 1.71,
+    "edge_pct": 5.26,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 70076098,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-16T13:00:48Z",
+    "alerted_at": "2026-04-16T13:00:48Z",
+    "hours_to_kickoff": 297.0
   }
 ]

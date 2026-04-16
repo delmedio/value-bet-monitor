@@ -24646,5 +24646,31 @@
     "first_seen_at": "2026-04-16T07:00:43Z",
     "alerted_at": "2026-04-16T07:00:43Z",
     "hours_to_kickoff": 324.0
+  },
+  {
+    "pick_id": "be5d85115a",
+    "game": "Paris Saint-Germain vs Bayern Munich",
+    "league": "International Clubs - UEFA Champions League",
+    "league_slug": "international-clubs-uefa-champions-league",
+    "home_team": "Paris Saint-Germain",
+    "away_team": "Bayern Munich",
+    "market": "Spread",
+    "selection": "Paris Saint-Germain -0.25",
+    "kickoff": "28/04/2026 19:00",
+    "opening_odd": 2.025,
+    "fair_odd": 1.903,
+    "edge_pct": 6.41,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 69339430,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-16T08:00:45Z",
+    "alerted_at": "2026-04-16T08:00:45Z",
+    "hours_to_kickoff": 299.0
   }
 ]

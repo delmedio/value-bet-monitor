@@ -24620,5 +24620,31 @@
     "first_seen_at": "2026-04-16T05:00:42Z",
     "alerted_at": "2026-04-16T05:00:42Z",
     "hours_to_kickoff": 355.0
+  },
+  {
+    "pick_id": "4b6b4fa1fa",
+    "game": "Atletico Madrid vs Arsenal FC",
+    "league": "International Clubs - UEFA Champions League",
+    "league_slug": "international-clubs-uefa-champions-league",
+    "home_team": "Atletico Madrid",
+    "away_team": "Arsenal FC",
+    "market": "DNB",
+    "selection": "Atletico Madrid",
+    "kickoff": "29/04/2026 19:00",
+    "opening_odd": 1.833,
+    "fair_odd": 1.741,
+    "edge_pct": 5.28,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 69339432,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-16T07:00:43Z",
+    "alerted_at": "2026-04-16T07:00:43Z",
+    "hours_to_kickoff": 324.0
   }
 ]

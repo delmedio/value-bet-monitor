@@ -24724,5 +24724,31 @@
     "first_seen_at": "2026-04-16T13:00:48Z",
     "alerted_at": "2026-04-16T13:00:48Z",
     "hours_to_kickoff": 297.0
+  },
+  {
+    "pick_id": "a1b87b7ffc",
+    "game": "FC Lorient vs Strasbourg Alsace",
+    "league": "France - Ligue 1",
+    "league_slug": "france-ligue-1",
+    "home_team": "FC Lorient",
+    "away_team": "Strasbourg Alsace",
+    "market": "Spread",
+    "selection": "Strasbourg Alsace -0.25",
+    "kickoff": "26/04/2026 13:00",
+    "opening_odd": 2.05,
+    "fair_odd": 1.927,
+    "edge_pct": 6.38,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61526542,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-16T16:00:51Z",
+    "alerted_at": "2026-04-16T16:00:51Z",
+    "hours_to_kickoff": 237.0
   }
 ]

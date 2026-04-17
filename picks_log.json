@@ -25036,5 +25036,31 @@
     "first_seen_at": "2026-04-17T10:00:45Z",
     "alerted_at": "2026-04-17T10:00:45Z",
     "hours_to_kickoff": 321.0
+  },
+  {
+    "pick_id": "5187dd71b9",
+    "game": "Aberdeen FC vs Kilmarnock FC",
+    "league": "Scotland - Premiership",
+    "league_slug": "scotland-premiership",
+    "home_team": "Aberdeen FC",
+    "away_team": "Kilmarnock FC",
+    "market": "Spread",
+    "selection": "Kilmarnock FC +0.25",
+    "kickoff": "25/04/2026 14:00",
+    "opening_odd": 2.025,
+    "fair_odd": 1.903,
+    "edge_pct": 6.41,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 70674910,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-17T18:00:46Z",
+    "alerted_at": "2026-04-17T18:00:46Z",
+    "hours_to_kickoff": 188.0
   }
 ]

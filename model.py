@@ -16,7 +16,7 @@ import json
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-MIN_ODD = 1.50
+MIN_ODD = 1.90
 
 
 def min_kickoff_date() -> str:
@@ -175,36 +175,65 @@ def _timing_bonus(tracked: list[dict]) -> float:
     return 0.0
 
 
-def _league_bonus(tracked: list[dict], league: str) -> float:
+def _league_market_bonus(tracked: list[dict], league: str, market: str = "") -> float:
     """
-    Ajuste por liga com base no CLV historico.
-    Ligas com CLV consistentemente alto → relaxa threshold.
-    Ligas com CLV negativo → aperta.
-    Retorna ajuste entre -1.0 e +1.5.
+    Ajuste por (liga, mercado) com base no CLV historico.
+
+    Uma liga pode ser boa num mercado e ma noutro (ex: Premier League forte em
+    Totals, fraca em DNB). Por isso calibramos pela combinacao.
+
+    Fallback: se nao houver dados suficientes do par (liga+mercado), cai
+    para a liga inteira. Se tambem nao chegar, retorna 0.
+
+    Retorna ajuste entre -1.0 e +3.0.
+    - Positivo = penalidade (apertar threshold, menos picks)
+    - Negativo = bonus (relaxar threshold, mais picks)
     """
     if not league:
         return 0.0
 
-    league_picks = [p for p in tracked if p.get("league") == league]
-    if len(league_picks) < 10:
-        return 0.0
+    # Tentar pelo par (liga, mercado) — mais granular
+    key_picks: list[dict] = []
+    if market:
+        aliases = _market_aliases(market)
+        key_picks = [
+            p for p in tracked
+            if p.get("league") == league and p.get("market") in aliases
+        ]
 
-    avg_clv = sum(p["clv_real"] for p in league_picks) / len(league_picks)
-    beat_pct = sum(1 for p in league_picks if p["clv_real"] > 0) / len(league_picks) * 100
+    # Fallback para a liga inteira se nao ha amostra suficiente do mercado
+    if len(key_picks) < 6:
+        league_picks = [p for p in tracked if p.get("league") == league]
+        if len(league_picks) < 10:
+            return 0.0
+        key_picks = league_picks
 
-    # Liga forte: CLV alto e consistente
-    if avg_clv >= 6 and beat_pct >= 60:
-        return -1.0
-    if avg_clv >= 4 and beat_pct >= 55:
-        return -0.5
-    # Liga fraca: CLV negativo
+    avg_clv = sum(p["clv_real"] for p in key_picks) / len(key_picks)
+    beat_pct = sum(1 for p in key_picks if p["clv_real"] > 0) / len(key_picks) * 100
+
+    # Penalidades crescentes consoante CLV historico
+    if avg_clv < -4:
+        return 3.0   # bloqueia praticamente (nenhum edge base atinge)
     if avg_clv < -2:
+        return 2.0   # quase bloqueia
+    if avg_clv < -1:
         return 1.5
     if avg_clv < 0:
         return 1.0
+    # Zona neutra com poucos sinais positivos — leve aperto
     if avg_clv < 1.5 and beat_pct < 45:
         return 0.5
+    # Bonus modestos para ligas com sinais claros de valor
+    if avg_clv >= 5 and beat_pct >= 60:
+        return -1.0
+    if avg_clv >= 3 and beat_pct >= 55:
+        return -0.5
     return 0.0
+
+
+# Alias compatibilidade com chamadas antigas
+def _league_bonus(tracked: list[dict], league: str) -> float:
+    return _league_market_bonus(tracked, league, market="")
 
 
 def _hour_band(hour: int) -> str:
@@ -302,7 +331,7 @@ def adaptive_min_edge(
     except Exception:
         return base_edge
 
-    if len(tracked) < 15:
+    if len(tracked) < 10:
         return base_edge
 
     avg_clv = sum(pick["clv_real"] for pick in tracked) / len(tracked)
@@ -319,14 +348,14 @@ def adaptive_min_edge(
     # Ajuste por timing (super earlys vs late picks)
     adjustment += _timing_bonus(tracked)
 
-    # Ajuste por liga (todas as tracked, não só do mercado)
+    # Ajuste por (liga, mercado) — mais granular que so por liga
     try:
         all_tracked = [
             pick for pick in raw
             if isinstance(pick, dict)
             and isinstance(pick.get("clv_real"), (int, float))
         ]
-        adjustment += _league_bonus(all_tracked, league)
+        adjustment += _league_market_bonus(all_tracked, league, market)
     except Exception:
         pass
 
@@ -364,4 +393,3 @@ def is_value_bet(opening_odd: float, market: str = "ML", league: str = "") -> di
         "min_edge_pct": min_edge,
         "level": ev_level(edge),
     }
-

@@ -25,8 +25,9 @@ from model import (
 # ── get_calibration_factor ───────────────────────────────────────────────────
 
 class TestGetCalibrationFactor:
-    def test_ml_low_band(self):
-        assert get_calibration_factor(1.65, "ML") == 0.979
+    def test_ml_low_band_below_min_odd(self):
+        # 1.65 esta na banda 1.50-1.80 do perfil, mas MIN_ODD=1.90 filtra.
+        assert get_calibration_factor(1.65, "ML") is None
 
     def test_ml_mid_band(self):
         assert get_calibration_factor(1.90, "ML") == 0.987
@@ -43,14 +44,14 @@ class TestGetCalibrationFactor:
     def test_above_max_odd(self):
         assert get_calibration_factor(2.50, "ML") is None
 
-    def test_dnb_low_band(self):
-        assert get_calibration_factor(1.70, "DNB") == 0.975
+    def test_dnb_low_band_below_min_odd(self):
+        assert get_calibration_factor(1.70, "DNB") is None
 
     def test_dnb_high_band(self):
         assert get_calibration_factor(2.10, "DNB") == 0.955
 
-    def test_ah_low_band(self):
-        assert get_calibration_factor(1.75, "AH") == 0.958
+    def test_ah_low_band_below_min_odd(self):
+        assert get_calibration_factor(1.75, "AH") is None
 
     def test_ou_mid_band(self):
         assert get_calibration_factor(1.90, "OU") == 0.955
@@ -60,7 +61,8 @@ class TestGetCalibrationFactor:
 
 class TestEstimateFairOdd:
     def test_ml_value(self):
-        assert estimate_fair_odd(1.65, "ML") == round(1.65 * 0.979, 3)
+        # 1.95 cai na banda 1.80-2.00 com factor 0.987.
+        assert estimate_fair_odd(1.95, "ML") == round(1.95 * 0.987, 3)
 
     def test_dnb_value(self):
         assert estimate_fair_odd(2.10, "DNB") == round(2.10 * 0.955, 3)
@@ -200,15 +202,26 @@ class TestLeagueBonus:
         assert _league_bonus(tracked, "Liga") == -0.5
 
     def test_weak_league(self):
-        """Liga com CLV < 0 → aperta +1.0."""
+        """Liga com CLV < -1 → aperta +1.5."""
         tracked = [{"league": "Bad", "clv_real": v} for v in
                    [-1, -2, 1, -3, -1, -2, 0, -1, -2, -1]]  # avg=-1.2
-        assert _league_bonus(tracked, "Bad") == 1.0
+        assert _league_bonus(tracked, "Bad") == 1.5
+
+    def test_mildly_weak_league(self):
+        """Liga com -1 <= CLV < 0 → aperta +1.0."""
+        tracked = [{"league": "Soft", "clv_real": v} for v in
+                   [-1, 0, -1, 0, -1, 0, -1, 0, -1, 0]]  # avg=-0.5
+        assert _league_bonus(tracked, "Soft") == 1.0
 
     def test_very_weak_league(self):
-        """Liga com CLV < -2 → aperta +1.5."""
+        """Liga com CLV < -2 → aperta +2.0."""
         tracked = self._make_picks("Terrible", -3.0, n=12)
-        assert _league_bonus(tracked, "Terrible") == 1.5
+        assert _league_bonus(tracked, "Terrible") == 2.0
+
+    def test_disastrous_league(self):
+        """Liga com CLV < -4 → aperta +3.0 (praticamente bloqueia)."""
+        tracked = self._make_picks("Toxic", -5.0, n=12)
+        assert _league_bonus(tracked, "Toxic") == 3.0
 
     def test_neutral_league(self):
         """Liga com CLV ok → sem ajuste."""

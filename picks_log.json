@@ -30678,5 +30678,31 @@
     "first_seen_at": "2026-04-25T03:00:41Z",
     "alerted_at": "2026-04-25T03:00:41Z",
     "hours_to_kickoff": 182.0
+  },
+  {
+    "pick_id": "97988db7a1",
+    "game": "Mirassol FC SP vs Always Ready",
+    "league": "International Clubs - Copa Libertadores",
+    "league_slug": "international-clubs-copa-libertadores",
+    "home_team": "Mirassol FC SP",
+    "away_team": "Always Ready",
+    "market": "Spread",
+    "selection": "Always Ready +1.50",
+    "kickoff": "29/04/2026 22:00",
+    "opening_odd": 2.025,
+    "fair_odd": 1.903,
+    "edge_pct": 6.41,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 70076014,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-25T05:00:38Z",
+    "alerted_at": "2026-04-25T05:00:38Z",
+    "hours_to_kickoff": 113.0
   }
 ]

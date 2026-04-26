@@ -31458,5 +31458,31 @@
     "first_seen_at": "2026-04-26T01:00:41Z",
     "alerted_at": "2026-04-26T01:00:41Z",
     "hours_to_kickoff": 155.0
+  },
+  {
+    "pick_id": "b946c0044c",
+    "game": "Tranmere Rovers FC vs Grimsby Town",
+    "league": "England - League Two",
+    "league_slug": "england-league-two",
+    "home_team": "Tranmere Rovers FC",
+    "away_team": "Grimsby Town",
+    "market": "Totals",
+    "selection": "Under 2.75",
+    "kickoff": "02/05/2026 14:00",
+    "opening_odd": 2.025,
+    "fair_odd": 1.903,
+    "edge_pct": 6.41,
+    "level": "\ud83d\udcca Value",
+    "bet_href": "",
+    "event_id": 61495039,
+    "historical_event_id": null,
+    "singbet_open": null,
+    "closing_odd_reference": null,
+    "closing_bookmaker": null,
+    "clv_real": null,
+    "tracked_at": null,
+    "first_seen_at": "2026-04-26T09:00:40Z",
+    "alerted_at": "2026-04-26T09:00:40Z",
+    "hours_to_kickoff": 149.0
   }
 ]

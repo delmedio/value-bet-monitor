@@ -1,11 +1,13 @@
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tracker import (
     make_pick_id, Pick, _find_bookmaker_closing, _find_best_closing, _derive_dnb_from_ml,
     _parse_hdp_from_selection, _parse_line_from_selection, timing_band,
+    filter_report_picks, report_since_dt,
 )
 
 
@@ -421,3 +423,22 @@ class TestPickTimingFields:
         assert pick.hours_to_kickoff is None
         assert pick.alerted_at is None
         assert pick.first_seen_at is None
+
+
+class TestReportFilters:
+    def test_report_since_dt_uses_days_when_no_env_cutoff(self):
+        now = datetime(2026, 4, 27, 12, 0, tzinfo=timezone.utc)
+        since = report_since_dt(days=7, now=now)
+        assert since == datetime(2026, 4, 20, 12, 0, tzinfo=timezone.utc)
+
+    def test_filter_report_picks_by_days(self):
+        picks = [
+            _make_pick(game="A vs B", kickoff="19/04/2026 12:00"),
+            _make_pick(game="C vs D", kickoff="21/04/2026 12:00"),
+            _make_pick(game="E vs F", kickoff="26/04/2026 12:00"),
+        ]
+        filtered = filter_report_picks(picks, days=7)
+        games = [pick.game for pick in filtered]
+        assert "A vs B" not in games
+        assert "C vs D" in games
+        assert "E vs F" in games

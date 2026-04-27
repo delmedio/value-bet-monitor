@@ -79,6 +79,7 @@ jobs:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ODDS_API_IO_KEY: ${{ secrets.ODDS_API_IO_KEY }}
+          REPORT_MIN_KICKOFF_DATE: ${{ vars.REPORT_MIN_KICKOFF_DATE }}
         run: |
           MODE="${{ github.event.inputs.mode }}"
 

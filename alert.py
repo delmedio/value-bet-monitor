@@ -437,20 +437,14 @@ def _learning_rows(learning: dict) -> str:
 
 
 def send_weekly_report() -> None:
-    from tracker import get_learning_snapshot, load_picks
+    from tracker import filter_report_picks, get_learning_snapshot, load_picks, report_since_dt
 
     picks = load_picks()
     now = datetime.now(timezone.utc)
-    week_ago = now - timedelta(days=7)
-
-    week_picks = []
-    for pick in picks:
-        try:
-            kickoff_dt = datetime.strptime(pick.kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
-        except Exception:
-            continue
-        if kickoff_dt >= week_ago:
-            week_picks.append(pick)
+    week_picks = filter_report_picks(picks, days=7)
+    cutoff_env = os.environ.get("REPORT_MIN_KICKOFF_DATE", "").strip()
+    since_dt = report_since_dt(days=7, now=now) if cutoff_env else None
+    since_note = f" · filtro inicial: {since_dt.strftime('%d/%m/%Y')}" if since_dt else ""
 
     tracked = [pick for pick in week_picks if pick.clv_real is not None]
     avg_clv = round(sum(pick.clv_real for pick in tracked) / len(tracked), 1) if tracked else None
@@ -512,7 +506,7 @@ def send_weekly_report() -> None:
             "</tr>"
         )
 
-    all_tracked = [pick for pick in picks if pick.clv_real is not None]
+    all_tracked = [pick for pick in filter_report_picks(picks, days=None) if pick.clv_real is not None]
     total_tracked = len(all_tracked)
     overall_clv = round(sum(pick.clv_real for pick in all_tracked) / total_tracked, 1) if all_tracked else None
     overall_btl = round(sum(1 for pick in all_tracked if pick.clv_real > 0) / total_tracked * 100) if all_tracked else None
@@ -549,7 +543,7 @@ def send_weekly_report() -> None:
 <div class="container">
   <div class="header">
     <h1>📊 Value Bet Monitor — Report Semanal</h1>
-    <p>Semana ate {week_str} · Abertura: Bet365 · Fecho tracked: melhor odd entre Sbobet e Stake via historical odds da odds-api.io</p>
+    <p>Semana ate {week_str}{since_note} · Abertura: Bet365 · Fecho tracked: melhor odd entre Sbobet e Stake via historical odds da odds-api.io</p>
   </div>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-value">{len(week_picks)}</div><div class="kpi-label">Picks</div></div>

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from collections import defaultdict
 from pathlib import Path
 from dataclasses import dataclass, asdict
@@ -17,6 +18,7 @@ from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 PICKS_FILE = Path("picks_log.json")
+REPORT_MIN_KICKOFF_DATE = os.environ.get("REPORT_MIN_KICKOFF_DATE", "").strip()
 
 
 @dataclass
@@ -357,19 +359,49 @@ def _find_best_closing(pick: Pick, bookmaker_feeds: dict[str, dict]) -> Optional
     return max(candidates, key=lambda item: item[1])
 
 
-def get_picks_for_report(days: int = 7) -> dict:
-    now = datetime.now(timezone.utc)
-    since = now - timedelta(days=days)
-    picks = load_picks()
+def _parse_report_cutoff() -> datetime | None:
+    if not REPORT_MIN_KICKOFF_DATE:
+        return None
+    try:
+        return datetime.strptime(REPORT_MIN_KICKOFF_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except Exception:
+        logger.warning(
+            "REPORT_MIN_KICKOFF_DATE invalida: %s (esperado YYYY-MM-DD)",
+            REPORT_MIN_KICKOFF_DATE,
+        )
+        return None
 
-    recent = []
+
+def report_since_dt(days: int | None = None, now: datetime | None = None) -> datetime | None:
+    now = now or datetime.now(timezone.utc)
+    candidates: list[datetime] = []
+    if days is not None:
+        candidates.append(now - timedelta(days=days))
+    cutoff = _parse_report_cutoff()
+    if cutoff is not None:
+        candidates.append(cutoff)
+    return max(candidates) if candidates else None
+
+
+def filter_report_picks(picks: list[Pick], days: int | None = None) -> list[Pick]:
+    since = report_since_dt(days=days)
+    if since is None:
+        return picks
+
+    filtered = []
     for pick in picks:
         try:
             kickoff_dt = datetime.strptime(pick.kickoff, "%d/%m/%Y %H:%M").replace(tzinfo=timezone.utc)
         except Exception:
             continue
         if kickoff_dt >= since:
-            recent.append(pick)
+            filtered.append(pick)
+    return filtered
+
+
+def get_picks_for_report(days: int = 7) -> dict:
+    picks = load_picks()
+    recent = filter_report_picks(picks, days=days)
 
     tracked = [pick for pick in recent if pick.clv_real is not None]
     pending = [pick for pick in recent if pick.clv_real is None]
@@ -407,7 +439,7 @@ def timing_band(hours: float | None) -> str:
 
 
 def get_learning_snapshot(min_samples: int = 5) -> dict:
-    tracked = [pick for pick in load_picks() if pick.clv_real is not None]
+    tracked = [pick for pick in filter_report_picks(load_picks(), days=None) if pick.clv_real is not None]
     overall_count = len(tracked)
     overall_avg_clv = round(sum(pick.clv_real for pick in tracked) / overall_count, 2) if tracked else 0.0
     overall_beat_pct = round(sum(1 for pick in tracked if pick.clv_real > 0) / overall_count * 100, 1) if tracked else 0.0
